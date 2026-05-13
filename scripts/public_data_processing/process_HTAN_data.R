@@ -2,7 +2,9 @@ library(Seurat)
 library(Signac)
 library(Rsamtools)
 library(GenomicRanges)
-setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/")
+# setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/")
+dir_ATAC <- file.path("/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/snATACseq/")
+setwd(dir_ATAC)
 ## get data from the primary tumour
 barcodes_primary <- readLines("CM618C1-S1-barcodes.tsv")
 peaks_primary <- read.table("CM618C1-S1-peaks.bed", sep="\t")
@@ -24,7 +26,8 @@ peaks_met_gr <- GRanges(
 )
 peaknames_met <- paste(peaks_met$V1, peaks_met$V2, peaks_met$V3, sep="-")
 fragpath_met <- 'CM618C2-T1-fragments.tsv.gz'
-
+process_met <- readRDS("CRC_CM618C1-T1Y2.rds")
+barcodes_process_met <- process_met$Original_barcode
 
 ##### combine the peaks
 combined.peaks <- reduce(x = c(peaks_primary_gr,peaks_met_gr))
@@ -32,19 +35,28 @@ combined.peaks <- reduce(x = c(peaks_primary_gr,peaks_met_gr))
 # Filter out bad peaks based on length
 peakwidths <- width(combined.peaks)
 combined.peaks <- combined.peaks[peakwidths  < 10000 & peakwidths > 20]
-combined.peaks
 
-# processed_data <- readRDS("CRC_CM268C1-T1.rds")
-# cells <- sub(".*_", "", colnames(processed_data))
-# Define cells
-# If you already have a list of cell barcodes to use you can skip this step
-# total_counts <- CountFragments(fragpath)
-# cutoff <- 1000 # Change this number depending on your dataset!
-# barcodes <- total_counts[total_counts$frequency_count > cutoff, ]$CB
+
+
 
 # Create a fragment object
-frags_mets <- CreateFragmentObject(path = fragpath_met, cells = barcodes_met)
+# Fragmetns file must be indexed
+frags_mets <- CreateFragmentObject(path = fragpath_met, cells = barcodes_process_met)
 frags_prim <- CreateFragmentObject(path = fragpath_primary, cells = barcodes_process_primary)
+
+
+
+# attach to Seurat object
+Fragments(process_met) <- NULL
+# attach new fragment object
+Fragments(process_met) <- frags_mets
+
+
+# attach to Seurat object
+Fragments(process_primary) <- NULL
+# attach new fragment object
+Fragments(process_primary) <- frags_prim
+
 
 primary.counts <- FeatureMatrix(
   fragments = frags_prim,
@@ -106,10 +118,7 @@ chrom_assay <- CreateChromatinAssay(
   min.features = 200
 )
 
-pbmc <- CreateSeuratObject(
-  counts = chrom_assay,
-  assay = "peaks"
-)
+
 
 library(AnnotationHub)
 ah <- AnnotationHub()
@@ -117,6 +126,9 @@ ah <- AnnotationHub()
 # Search for the Ensembl 98 EnsDb for Homo sapiens on AnnotationHub
 query(ah, "EnsDb.Hsapiens.v98")
 ensdb_v98 <- ah[["AH75011"]]
+
+ensdb <- ensdb_hits[["AH116479"]]
+
 # extract gene annotations from EnsDb
 annotations <- GetGRangesFromEnsDb(ensdb = ensdb_v98)
 

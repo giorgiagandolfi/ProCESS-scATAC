@@ -14,7 +14,7 @@ library(harmony)
 # library(TFBSTools)
 # library(motifmatchr)
 library(BSgenome.Hsapiens.UCSC.hg38)
-setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/")
+# setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/")
 
 ############################################
 ## 1. INPUT DATA
