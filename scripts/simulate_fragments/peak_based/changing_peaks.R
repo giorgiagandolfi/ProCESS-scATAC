@@ -28,45 +28,80 @@ status_fixed_peaks <- rep(1,100)
 df_fixed <- data.frame(peak_id=fixed_peaks,
                        status=status_fixed_peaks) 
 
+####### define the markov chain of open-closed chromatin
+states <- c("open", "closed")
+
+# Transition matrix:
+# rows = current state, cols = next state
+P <- matrix(c(
+  0.8, 0.2,  # open -> open/closed
+  0.3, 0.7   # closed -> open/closed
+), nrow = 2, byrow = TRUE)
+
+rownames(P) <- states
+colnames(P) <- states
+df_fixed <- data.frame(peak_id=paste0("peak_",seq_along(1:1000)),
+                       cell_id=NA,
+                       status=NA) 
+
+simulate_fluctating_peaks <- function(n = 1000, P, states) {
+  x <- character(n)
+  x[1] <- sample(states, 1)
+  
+  for (i in 2:n) {
+    current <- x[i - 1]
+    x[i] <- sample(
+      states,
+      size = 1,
+      prob = P[current, ]
+    )
+  }
+  x
+}
 
 labelling_functor1 <- function(label, node) {
   # the nodes are labelled by the identifiers of the associated cells
   cell_id_node = node$cell_id
-  mutant = sample_forest$get_nodes() %>% filter(cell_id==cell_id_node) %>% 
-    pull(mutant)
-  if (mutant=="Clone 3"){
-    changing_peaks <- paste0("peakA_",seq_along(1:100))
-    status_changing_peaks <- rbinom(n = 100*0.7, size = 1, prob = 0.6)
-    status_keep_peaks <- rbinom(n = 100*0.3, size = 1, prob = 0.2)
-    # status_changing_peaks <- rep(2,100)
-    df_changing <- data.frame(peak_id=changing_peaks,
-                              status=c(status_changing_peaks,status_keep_peaks))
-    df_final <- rbind(df_fixed,df_changing)
-    return(df_final)  
-  } else{
-    changing_peaks <- paste0("peakA_",seq_along(1:100))
-    status_changing_peaks <- rbinom(n = 100, size = 1, prob = 0.2)
-    # status_changing_peaks <- rep(4,100)
-    df_changing <- data.frame(peak_id=changing_peaks,
-                              status=status_changing_peaks
-    )
-    df_final <- rbind(df_fixed,df_changing)
-    return(df_final)  
-  }
-  
+  chromatin_status <- simulate_fluctating_peaks(n = 1000,P,states = c("open","closed"))
+  df_changing <- data.frame(peak_id=paste0("peak_",seq_along(1:1000)),
+                            cell_id=cell_id_node,
+                            status=chromatin_status)
+  # df_final <- rbind(df_fixed,df_changing)
+  return(df_changing)  
 }
 
 tour <- get_label_tour(sample_forest, labelling_functor1, only_leaves=TRUE)
-df <- data.frame()
+df <- list()
+i=1
 while (!tour$done) {
-  df <- rbind(df,tour$value)
+  # print(tour$value)
+  df[[i]] <- tour$value
+  i=i+1
   tour$step()
 }
+df_final <- do.call("rbind",df)
 cell_info <- sample_forest$get_nodes()
-df <- df %>% inner_join(cell_info)
+df_final <- df_final %>% inner_join(cell_info)
+df<-df_final
 
 
 
+
+
+########## plot heatmap ###########
+
+
+
+mutant_cols <- c(
+  "Clone 1" = "goldenrod",
+  "Clone 2" = "magenta4",
+  "Clone 3" ="forestgreen"
+)
+
+sample_cols <- c(
+  S1 = "darkorange",
+  S2 = "royalblue3"
+)
 final_df <- df %>% 
   # filter(!str_starts(label.peak_id, "peak_")) %>% 
   select(cell_id,label.peak_id,label.status,mutant,sample) 
@@ -129,8 +164,8 @@ plot_heatmap_chromtin <-Heatmap(
   left_annotation = row_ha,show_row_dend = F,
   show_column_names = F, show_row_names = F, split = row_annot_df$sample
 )
-png(filename = "mets_plot/plot_heatmap_chromatin.png",
-    width = 6, height = 6, units = "in", res = 300)
+# png(filename = "mets_plot/plot_heatmap_chromatin.png",
+#     width = 6, height = 6, units = "in", res = 300)
 draw(plot_heatmap_chromtin)
-dev.off()
+# dev.off()
 
