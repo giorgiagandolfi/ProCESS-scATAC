@@ -6,42 +6,42 @@ library(tidyverse)
 library(ComplexHeatmap)
 library(circlize)
 source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/scripts/plot_muller.R")
-setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC")
+setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/")
 source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/utils.R")
-sample_forest <- load_sample_forest("sample_forest_atac_small.sff")
-phylo_forest <- load_phylogenetic_forest("phylo_forest_atac_small.sff")
+sample_forest <- load_sample_forest("sample_forest_atac_epigenome.sff")
+phylo_forest <- load_phylogenetic_forest("phylo_forest_atac_epigenetic.sff")
 
 
 mutant_cols <- c(
-  "Clone 1" = "goldenrod",
-  "Clone 2" = "magenta4",
-  "Clone 3" ="forestgreen"
+  "A+" = "goldenrod",
+  "A-" = "magenta4",
+  "B+" = "royalblue3",
+  "B-" ="forestgreen"
 )
 
 sample_cols <- c(
-  S1 = "darkorange",
+  S1 = "lightskyblue1",
   S2 = "royalblue3"
 )
 
-fixed_peaks <- paste0("peak_",seq_along(1:100))
-status_fixed_peaks <- rbinom(n = 100, size = 1, prob = 0.4)
-status_fixed_peaks <- rep(1,100)
-df_fixed <- data.frame(peak_id=fixed_peaks,
-                       status=status_fixed_peaks) 
+
 
 ####### define the markov chain of open-closed chromatin
-total_simulated_peaks <- 10
-fixed_peaks <- rep(x = "fixed",total_simulated_peaks*0.8)
+total_simulated_peaks <- 30
+fixed_peaks <- rep(x = "fixed",total_simulated_peaks*0.3)
 changing_peaks <- rep(x = "fluctuating",total_simulated_peaks*0.2)
+clone_peaks<- rep(x = "clonal",total_simulated_peaks*0.5)
 
 # df_peak_types <- data.frame(peak_id=paste0("peak_",seq_along(1:total_simulated_peaks)),
 #                             type=c(fixed_peaks,changing_peaks)) 
-crc_peaks<- readRDS("crc_peaks.rds")
-df_peak_types <- crc_peaks %>% head(10) %>% 
-  mutate(type=c(fixed_peaks,changing_peaks))
+crc_peaks<- readRDS("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/crc_peaks.rds")
+df_peak_types <- crc_peaks %>% head(30) %>% 
+  mutate(type=c(fixed_peaks,changing_peaks,clone_peaks))
 df_peak_types <- df_peak_types %>% 
   mutate(status=case_when(type=="fixed"~"open",
-                          TRUE ~NA))
+                          TRUE ~"closed")) %>% 
+  mutate(mutant=c(rep(NA,30*0.5),rep("A",30*0.2),rep("B",30*0.3))) %>% 
+  mutate(epistate=c(rep(NA,30*0.5),rep("+",30*0.1),rep("-",30*0.1),rep("+",6),rep("-",3)))
 
 
 # Transition matrix:
@@ -89,9 +89,16 @@ labelling_functor1 <- function(label, node) {
 
   # the nodes are labelled by the identifiers of the associated cells
   cell_id_node = node$cell_id
-  print(cell_id_node)
+  cell_mutant = phylo_forest$get_nodes() %>% 
+    filter(cell_id==cell_id_node) %>% 
+    pull(mutant)
+  cell_phenotype = phylo_forest$get_nodes() %>% 
+    filter(cell_id==cell_id_node) %>% 
+    pull(epistate)
+  
   cell_cna = cna_data_sim %>% filter(cell_id==cell_id_node) %>% 
     select(chr,major,minor,from,to)
+  
   if (nrow(cell_cna)!=0){
     ### update the status dataframe for each peak
     tot_fluctutating_peaks <- df_peak_types %>% 
@@ -105,10 +112,15 @@ labelling_functor1 <- function(label, node) {
           chromatin_status_flc_peaks
         )
       ) %>% 
+      mutate(status=case_when(mutant==cell_mutant & epistate==cell_phenotype ~ "open",TRUE~status)) %>% 
       mutate(cell_id=cell_id_node)
+    
+    
     list_fragment_counts_per_peak <- list()
-    for (p in 1:nrow(df_peak_types_cell)){
-      peak_df = df_peak_types_cell[p,]
+    df_peak_types_cell_open <- df_peak_types_cell %>% 
+      filter(status=="open")
+    for (p in 1:nrow(df_peak_types_cell_open)){
+      peak_df = df_peak_types_cell_open[p,]
       peak_status = peak_df %>% pull(status)
       # print(p)
       peak_df = peak_df %>%
@@ -153,6 +165,7 @@ labelling_functor1 <- function(label, node) {
   df_final <- do.call("rbind",list_fragment_counts_per_peak)
   return(df_final)  
 }
+
 
 start <- Sys.time()
 tour <- get_label_tour(sample_forest, labelling_functor1, only_leaves=TRUE)
@@ -250,17 +263,32 @@ mutant_cols <- c(
   # "Clone 3" ="forestgreen"
 )
 
-sample_cols <- c(
-  S1 = "darkorange",
-  S2 = "royalblue3"
+epistate_cols <- c(
+  "+" = "forestgreen",
+  "-" = "darkblue"
+  # "Clone 3" ="forestgreen"
+)
+
+mutant_cols <- c(
+  "A+" = "goldenrod",
+  "A-" = "magenta4",
+  "B+" = "royalblue3",
+  "B-" ="forestgreen"
+)
+peak_class <- c(
+  clonal = "violet",
+  fluctuating = "royalblue3",
+  fixed = "darkorange"
 )
 df_final <- df_final %>% 
   # filter(!str_starts(label.peak_id, "peak_")) %>% 
-  dplyr::select(cell_id,peak_id,status,mutant,sample) 
+  dplyr::select(cell_id,peak_id,status,mutant,sample,epistate,type) 
 row_annot_df <- df_final %>%
-  distinct(cell_id, sample, mutant) %>%
+  mutate(clone=paste0(mutant,epistate)) %>% 
+  distinct(cell_id, sample,clone) %>%
   arrange(sample)
-
+col_annot_df <- df_final %>% 
+  distinct(peak_id,type)
 df_final <- df_final %>% 
   mutate(status=case_when(status=="open"~1,
                                 TRUE~0)) %>% 
@@ -272,7 +300,7 @@ mat <- df_final %>%
   unique() %>% 
   pivot_wider(
     names_from = peak_id,
-    values_from = status
+    values_from = status,values_fill = 0
   ) %>%
   column_to_rownames("cell_id") %>%
   as.matrix()
@@ -294,10 +322,17 @@ mat <- df_final %>%
 
 
 row_ha <- rowAnnotation(
-  Clone = row_annot_df$mutant,
+  Clone = row_annot_df$clone,
+  # Epistate = row_annot_df$epistate,
   # sample =row_annot_df$sample,
   col = list(Clone=mutant_cols)
 )
+
+col_ha <- columnAnnotation(
+  Peak_Class = col_annot_df$type,
+  col = list(Peak_Class=peak_class)
+)
+
 # heatmap colors
 col_fun <- c(
   "0" = "white",
@@ -314,13 +349,15 @@ plot_heatmap_chromtin <-Heatmap(
   col = col_fun,
   cluster_rows = F,
   cluster_columns = F,
+  top_annotation = col_ha,
   left_annotation = row_ha,show_row_dend = F,
-  show_column_names = F, show_row_names = F, split = row_annot_df$sample
+  show_column_names = F, show_row_names = F#, split = row_annot_df$sample
 )
 # png(filename = "mets_plot/plot_heatmap_chromatin.png",
 #     width = 6, height = 6, units = "in", res = 300)
 draw(plot_heatmap_chromtin)
 # dev.off()
+
 
 plot_forest(sample_forest,color_map = mutant_cols)
 
