@@ -51,7 +51,7 @@ sample_fragment_size <- function() {
 
 ##### Place fragments 
 
-place_fragments <- function(start, fragments_sizes) {
+place_fragments <- function(start, fragments_sizes,gaps_sizes) {
   n <- length(fragments_sizes)
   from <- numeric(n)
   to <- numeric(n)
@@ -59,9 +59,17 @@ place_fragments <- function(start, fragments_sizes) {
   current <- start
   
   for (i in seq_along(fragments_sizes)) {
-    from[i] <- current
-    to[i] <- current + fragments_sizes[i] - 1
-    current <- to[i] + 1
+    if (i == 1){
+      from[i] <- current
+      to[i] <- current + fragments_sizes[i] - 1
+      current <- to[i] + 1
+    } else{
+      for (j in seq_along(gaps_sizes)){
+        from[i] <- current + gaps_sizes[j]
+        to[i] <- current + fragments_sizes[i] - 1
+        current <- to[i] + 1
+      }
+    }
   }
   fragm_ids <- paste0("fragm_",seq_along(1:length(fragments_sizes)))
   frg_pos_df <-data.frame(fragment = fragm_ids,
@@ -70,25 +78,30 @@ place_fragments <- function(start, fragments_sizes) {
   return(frg_pos_df)
 }
 
-place_fragments_in_peak <- function(fragments_sizes, peak_id,peak_from,peak_to){
+place_fragments_in_peak <- function(fragments_sizes, gaps_sizes,peak_id,peak_from,peak_to,sd_peak_center=30){
   # peak <- crc_peaks[1,]
   # peak_from <- peak$from
   # peak_to <- peak$to
   peak_center <- peak_from+((peak_to -peak_from)/2)
   
-  fragments_center <- rnorm(n=1,mean = as.numeric(peak_center),sd = 10)
-  sum_fragments <- sum(fragments_sizes)
+  fragments_center <- rnorm(n=1,mean = as.numeric(peak_center),sd = sd_peak_center)
+  sum_fragments <- sum(fragments_sizes,gaps_sizes)
   superfrag_from <- fragments_center-(sum_fragments/2)
   superfrag_to <- fragments_center+(sum_fragments/2)
   
   fragm_ids <- paste0("fragm_",seq_along(1:length(fragments_sizes)))
-  frg_pos_df <- place_fragments(start = superfrag_from,fragments_sizes = fragments_sizes)
+  frg_pos_df <- place_fragments(start = superfrag_from,fragments_sizes = fragments_sizes,gaps_sizes=gaps_sizes)
   frg_pos_df <- frg_pos_df %>% 
     mutate(peak=peak_id)
   
 }
 
-
+sample_gap_size <- function(mu = 50, sigma = 10) {
+  g <- rnorm(1, mean = mu, sd = sigma)
+  g <- round(g) 
+  g <- max(0, g)
+  return(g)
+}
 
 
 
@@ -98,65 +111,89 @@ sample_fragments_for_peak <- function(
     peak_id, ## in format chr1:242947:562757
     peak_from,
     peak_to,
-    flank = 50,
-    lambda = 0.1,
+    flank = 100,
+    lambda = 0.2, #0.1,
     max_attempts = 100,
     fragment_len_dist=NULL,
     tot_cn=2
+    # peak_status="open"
 ) {
-  peak_size <- peak_to-peak_from
-  
-  max_total <- peak_size + 2 * flank
-  
-  for (attempt in 1:max_attempts) {
+    peak_size <- peak_to-peak_from
     
-    n_frag <- sample_fragment_count(lambda)
+    max_total <- peak_size + 2 * flank
     
-    
-    success <- TRUE
-    allele_size_list=list()
-    for (allele in 1:tot_cn){
-      sizes <- numeric(0)
-      for (i in 1:n_frag) {
-        
-        accepted <- FALSE
-        
-        for (j in 1:max_attempts) {
+    for (attempt in 1:max_attempts) {
+      
+      n_frag <- sample_fragment_count(lambda)
+      # n_frag - 2
+      
+      success <- TRUE
+      allele_size_list=list()
+      for (allele in 1:tot_cn){
+        sizes <- numeric(0)
+        gaps <- numeric(0)
+        for (i in 1:n_frag) {
           
-          # 
-          if (!is.null(fragment_len_dist)){
-            s <- sample(x = fragment_len_dist,size = 1)
-          } else{
-            s <- sample_fragment_size()
+          accepted <- FALSE
+          
+          for (j in 1:max_attempts) {
+            
+            # 
+            if (!is.null(fragment_len_dist)){
+              s <- sample(x = fragment_len_dist,size = 1)
+            } else{
+              s <- sample_fragment_size()
+            }
+            
+            # sample gap BEFORE fragment (except first fragment)
+            g <- 0
+            if (i > 1) {
+              g <- sample_gap_size()   # <-- you define this
+            }
+            
+            remaining_frags <- n_frag - i
+            remaining_gaps  <- max(0, n_frag - i - 1)
+            
+            min_needed <- remaining_frags + remaining_gaps  # or more realistic below
+            
+            if ((sum(sizes) + sum(gaps) + s + g + min_needed) <= max_total) {
+              
+              sizes <- c(sizes, s)
+              if (i > 1) {
+                gaps <- c(gaps, g)
+              }
+              accepted <- TRUE
+              break
+            }
+            
+            # # reserve at least 1bp for remaining fragments
+            # min_needed <- (n_frag - i)
+            # 
+            # if ((sum(sizes) + sum(gaps) +s + min_needed) <= max_total) {
+            #   sizes <- c(sizes, s)
+            #   accepted <- TRUE
+            #   break
+            # }
           }
           
-          # reserve at least 1bp for remaining fragments
-          min_needed <- (n_frag - i)
-          
-          if ((sum(sizes) + s + min_needed) <= max_total) {
-            sizes <- c(sizes, s)
-            accepted <- TRUE
+          if (!accepted) {
+            success <- FALSE
             break
           }
         }
         
-        if (!accepted) {
-          success <- FALSE
-          break
+        if (success) {
+          
+          peaks_frags_df <- place_fragments_in_peak(fragments_sizes = sizes,
+                                                    gaps_sizes = gaps,
+                                                    peak_id = peak_id,peak_from = peak_from,
+                                                    peak_to = peak_to)
+          allele_size_list[[allele]]=peaks_frags_df %>% mutate(allele=paste0('allele_',allele))
+          # return(peaks_frags_df)
+          
         }
       }
       
-      if (success) {
-        
-        peaks_frags_df <- place_fragments_in_peak(fragments_sizes = sizes,
-                                                  peak_id = peak_id,peak_from = peak_from,
-                                                  peak_to = peak_to)
-        allele_size_list[[allele]]=peaks_frags_df %>% mutate(allele=paste0('allele_',allele))
-        # return(peaks_frags_df)
-        
-      }
-    }
-
   }
   results_allele=do.call('rbind',allele_size_list)
   return(results_allele)
