@@ -5,14 +5,15 @@ library(readxl)
 library(tidyverse)
 library(Seurat)
 library(Signac)
+library(ProCESS)
 library(GenomicRanges)
 
-source("/data/rds/DMP/UCEC/GENEVOD/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/utils.R")
-dir_ATAC <- file.path("/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/snATACseq/")
+source("/orfeo/cephfs/scratch/cdslab/ggandolfi//Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/utils.R")
+dir_ATAC <- file.path("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/")
 
 # peak_dataset <- read_xlsx("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/41586_2023_6682_MOESM4_ESM.xlsx",sheet = 1)
-fragpath_primary <- file.path(dir_ATAC,'level_3','CM618C1-S1-fragments.tsv.gz')
-process_primary <- readRDS(file.path(dir_ATAC,'level_4',"CRC_CM618C2-S1Y2.rds"))
+fragpath_primary <- file.path(dir_ATAC,'CM618C1-S1-fragments.tsv.gz')
+process_primary <- readRDS(file.path(dir_ATAC,"CRC_CM618C2-S1Y2.rds"))
 barcodes_process_primary <- process_primary$Original_barcode
 
 frags_prim <- CreateFragmentObject(path = fragpath_primary, cells = barcodes_process_primary)
@@ -42,7 +43,7 @@ crc_peaks <- peak_data_single_sample %>%
   mutate(peak_size=to-from)
 
 
-genome_coordinates <- readRDS(file.path(dir_ATAC,'level_3','genome_coordinates_hg38.rds'))
+genome_coordinates <- CNAqc::gene_coordinates_GRCh38
 vfrom = genome_coordinates$from
 names(vfrom) = genome_coordinates$chr
 
@@ -51,7 +52,7 @@ crc_peaks <- crc_peaks %>%
          to = to + vfrom[chr]) %>%
   mutate(peak_id=paste(chr,from,to,sep=":"))
 
-fragments_chr22=read.table(file = file.path(dir_ATAC,'level_3','CM618C1-S1-fragments-chr22.tsv'),header = F,sep = '\t')
+fragments_chr22=read.table(file = file.path(dir_ATAC,'CM618C1-S1-fragments-chr22.tsv'),header = F,sep = '\t')
 colnames(fragments_chr22) =c('chr','start','end','barcode','readCount')
 ### select only a specifi cell type
 metadata=tumor_subset@meta.data %>% 
@@ -59,19 +60,21 @@ metadata=tumor_subset@meta.data %>%
 fragments_chr22 = fragments_chr22 %>% 
   left_join(y = metadata,by = 'barcode') %>% 
   filter(!is.na(cell_type))
-selected_frags <-fragments_chr22 %>% filter(cell_type=='Tumor') %>% 
+selected_frags <-fragments_chr22 %>% 
+  filter(cell_type=='Tumor') %>% 
   mutate(from = start + vfrom[chr],
          to = end + vfrom[chr]) %>% 
-  mutate(fragment_len=to-from) 
+  mutate(fragment_len=to-from)
+
 selected_frags_dist_len = selected_frags %>% pull(fragment_len)
 set.seed(123)
 
 n_peaks <- nrow(crc_peaks)
 n_peaks <- 100
 
+phylo_forest <- load_phylogenetic_forest("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/phylo_forest_atac3.sff")
+cna_data_sim <- phylo_forest$get_cell_allelic_fragmentation()
 
-
-cna_data_sim = readRDS('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/process_simulation/cell_fragmentation.rds')
 #### convert to absolute coordinates
 cna_data_sim = cna_data_sim %>% 
   mutate(chr=paste0('chr',chr)) %>% 
@@ -113,7 +116,7 @@ for (c in 1:n_cells){
     # print(total_cna_peak)
     
     list_cell_frag[[p]] <-sample_fragments_for_peak(peak_id = as.character(crc_peaks[p,"peak_id"]),
-                                                     peak_from = as.numeric(crc_peaks[p,"from"]),
+                                                    peak_from = as.numeric(crc_peaks[p,"from"]),
                                                     peak_to = as.numeric(crc_peaks[p,"to"]),
                                                     fragment_len_dist = selected_frags_dist_len,
                                                     tot_cn = total_cna_peak) %>% 
@@ -161,16 +164,15 @@ ggplot() +
   #   alpha = 0.5
   # ) +
   geom_density(
-    data=data.frame(fragment_len=starting_dist_frag_sizes),
-    # data = selected_frags %>% filter(fragment_len <= 800),
+    data = selected_frags %>% filter(fragment_len <= 800),
     aes(x = fragment_len),
     binwidth = 1,
     # fill = "tomato",
     color="tomato",
     alpha = 0.3
-  )#+
-  # ggtitle(label = paste0('N cells: ',n_cells,'\nN peaks: ',n_peaks))+  theme_minimal()
-  
+  )+
+  ggtitle(label = paste0('N cells: ',n_cells,'\nN peaks: ',n_peaks))+  theme_minimal()
+
 
 results %>% 
   group_by(peak,cellID) %>% 

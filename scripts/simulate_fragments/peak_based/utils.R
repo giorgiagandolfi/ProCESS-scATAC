@@ -1,5 +1,6 @@
 library(extraDistr)
-
+library(data.table)
+library(Matrix)
 rztpois <- function(n, lambda) {
   x <- rpois(n, lambda)
   
@@ -28,11 +29,11 @@ sample_fragment_count <- function(lambda = 0.1,
 
 
 #### Functionto sample fragment sizes
-sample_fragment_size <- function() {
+sample_fragment_size <- function(n) {
   
   comp <- sample(
     x = 1:4,
-    size = 1,
+    size = n, # change to n fragments
     prob = c(0.5, 0.35, 0.10, 0.05)
   )
   
@@ -148,7 +149,7 @@ sample_fragments_for_peak <- function(
             # sample gap BEFORE fragment (except first fragment)
             g <- 0
             if (i > 1) {
-              g <- sample_gap_size()   # <-- you define this
+              g <- sample_gap_size()
             }
             
             remaining_frags <- n_frag - i
@@ -165,15 +166,6 @@ sample_fragments_for_peak <- function(
               accepted <- TRUE
               break
             }
-            
-            # # reserve at least 1bp for remaining fragments
-            # min_needed <- (n_frag - i)
-            # 
-            # if ((sum(sizes) + sum(gaps) +s + min_needed) <= max_total) {
-            #   sizes <- c(sizes, s)
-            #   accepted <- TRUE
-            #   break
-            # }
           }
           
           if (!accepted) {
@@ -189,8 +181,6 @@ sample_fragments_for_peak <- function(
                                                     peak_id = peak_id,peak_from = peak_from,
                                                     peak_to = peak_to)
           allele_size_list[[allele]]=peaks_frags_df %>% mutate(allele=paste0('allele_',allele))
-          # return(peaks_frags_df)
-          
         }
       }
       
@@ -200,4 +190,114 @@ sample_fragments_for_peak <- function(
   # stop("Could not generate valid configuration")
 }
 
+sample_fragments_for_peak_vec <- function(
+    peak_id,
+    peak_from,
+    peak_to,
+    flank = 100,
+    lambda = 0.2,
+    fragment_len_dist = NULL,
+    tot_cn,
+    max_fragments = 50,
+    cell_id
+) {
+  
+  n <- length(peak_id)
+  
+  stopifnot(
+    length(peak_from) == n,
+    length(peak_to) == n,
+    length(tot_cn) == n
+  )
+  
+  peak_size <- peak_to - peak_from
+  max_total <- peak_size + 2 * flank
+  
+  # vectorized fragment count sampling
+  n_frag_vec <- rztpois(n = n,lambda = lambda)
+  
+  n_frag_vec <- pmin(n_frag_vec, max_fragments)
+  
+  results <- vector("list", n)
+  
+  for (k in seq_len(n)) {
+    n_frag <- n_frag_vec[k]
+    
+    if (n_frag == 0 || tot_cn[k] == 0) {
+      next
+    }
+    
+    allele_results <- vector("list", tot_cn[k])
+    
+    for (allele in seq_len(tot_cn[k])) {
+      
+      # sample all fragment sizes simultaneously
+      if (!is.null(fragment_len_dist)) {
+        
+        sizes <- sample(
+          fragment_len_dist,
+          size = n_frag,
+          replace = TRUE
+        )
+        
+      } else {
+        
+        sizes <- sample_fragment_size(n_frag)
+        
+      }
+      
+      # sample all gaps simultaneously
+      gaps <- numeric(n_frag)
+      
+      if (n_frag > 1) {
+        gaps[2:n_frag] <- sample_gap_size(n_frag - 1)
+      }
+      
+      # cumulative occupied space
+      occupied <- cumsum(sizes + gaps)
+      
+      keep <- occupied <= max_total[k]
+      
+      if (!any(keep)) {
+        next
+      }
+      
+      sizes <- sizes[keep]
+      gaps  <- gaps[keep]
+      
+      # vectorized fragment placement
+      starts <- peak_from[k] + cumsum(gaps)
+      
+      if (length(sizes) > 1) {
+        starts[-1] <- starts[-1] +
+          cumsum(sizes[-length(sizes)])
+      }
+      
+      ends <- starts + sizes - 1
+      
+      allele_results[[allele]] <- data.table::data.table(
+        peak_id = peak_id[k],
+        peak_from = peak_from[k],
+        peak_to = peak_to[k],
+        allele = paste0("allele_", allele),
+        fragment_start = starts,
+        fragment_end = ends,
+        fragment_size = sizes,
+        cell_id=cell_id
+      )
+    }
+    
+    results[[k]] <- data.table::rbindlist(
+      allele_results,
+      use.names = TRUE,
+      fill = TRUE
+    )
+  }
+  
+  data.table::rbindlist(
+    results,
+    use.names = TRUE,
+    fill = TRUE
+  )
+}
 
