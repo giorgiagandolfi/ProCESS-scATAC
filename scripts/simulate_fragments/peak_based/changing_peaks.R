@@ -299,7 +299,7 @@ df_peak_cna_final <- df_peak_cna_final %>% dplyr::select(cell_id,label.peak_id,l
 
 
 
-frag_res_all_cells <- lapply(all_cells, function(c){
+frag_res_all_cells <- lapply(df_peak_final$cell_id %>% unique(), function(c){
   peak_cell <- df_peak_final %>% filter(cell_id==c) %>% 
     filter(status==1) %>% 
     separate(peak_id,into = c("chr","from","to"),sep = ":",remove = F)
