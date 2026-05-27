@@ -266,25 +266,21 @@ sample_fragments_for_peak_vec <- function(
       gaps  <- gaps[keep]
       
       # vectorized fragment placement
-      starts <- peak_from[k] + cumsum(gaps)
+      peaks_frags_df <- place_fragments_in_peak(fragments_sizes = sizes,
+                                                gaps_sizes = gaps,
+                                                peak_id = peak_id[k],peak_from = peak_from[k],
+                                                peak_to = peak_to[k])
       
-      if (length(sizes) > 1) {
-        starts[-1] <- starts[-1] +
-          cumsum(sizes[-length(sizes)])
-      }
-      
-      ends <- starts + sizes - 1
-      
-      allele_results[[allele]] <- data.table::data.table(
-        peak_id = peak_id[k],
-        peak_from = peak_from[k],
-        peak_to = peak_to[k],
-        allele = paste0("allele_", allele),
-        fragment_start = starts,
-        fragment_end = ends,
-        fragment_size = sizes,
-        cell_id=cell_id
-      )
+      allele_results[[allele]] <- peaks_frags_df %>% mutate(allele=paste0('allele_',allele)) %>% 
+        mutate(peak_id = peak_id[k],
+               peak_from = peak_from[k],
+               peak_to = peak_to[k],
+               fragment_size = sizes,
+               cell_id=cell_id
+               ) %>% 
+        dplyr::rename(fragment_start=from,
+                      fragment_end=to)
+
     }
     
     results[[k]] <- data.table::rbindlist(
@@ -300,4 +296,5 @@ sample_fragments_for_peak_vec <- function(
     fill = TRUE
   )
 }
+
 
