@@ -63,6 +63,9 @@ place_fragments <- function(start, fragments_sizes,gaps_sizes) {
     if (i == 1){
       from[i] <- current
       to[i] <- current + fragments_sizes[i] - 1
+      if (from[i]>=to[i]){
+        message("Error")
+      }
       current <- to[i] + 1
     } else{
       for (j in seq_along(gaps_sizes)){
@@ -192,6 +195,7 @@ sample_fragments_for_peak <- function(
 
 sample_fragments_for_peak_vec <- function(
     peak_id,
+    peak_chr,
     peak_from,
     peak_to,
     flank = 100,
@@ -273,10 +277,12 @@ sample_fragments_for_peak_vec <- function(
       
       allele_results[[allele]] <- peaks_frags_df %>% mutate(allele=paste0('allele_',allele)) %>% 
         mutate(peak_id = peak_id[k],
+               peak_chr=peak_chr,
                peak_from = peak_from[k],
                peak_to = peak_to[k],
                fragment_size = sizes,
-               cell_id=cell_id
+               cell_id=cell_id,
+               fragment_chr=peak_chr
                ) %>% 
         dplyr::rename(fragment_start=from,
                       fragment_end=to)

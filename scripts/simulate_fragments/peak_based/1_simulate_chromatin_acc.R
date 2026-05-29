@@ -30,21 +30,60 @@ sample_cols <- c(
 
 
 ####### define the markov chain of open-closed chromatin
-total_simulated_peaks <- 100
-fixed_peaks <- rep(x = "fixed",total_simulated_peaks*0.3)
-changing_peaks <- rep(x = "fluctuating",total_simulated_peaks*0.2)
-clone_peaks<- rep(x = "clonal",total_simulated_peaks*0.5)
+# crc_peaks<- readRDS("crc_peaks.rds")
+crc_peaks <- read_excel('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/41586_2023_6682_MOESM4_ESM.xlsx',sheet = 1) %>% 
+  filter(Cancer=="CRC") %>% 
+  filter(!grepl("chrX", peak)) %>% 
+  filter(!grepl("chrY", peak))
+crc_peaks_top_fch <- read_excel('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/41586_2023_6682_MOESM4_ESM.xlsx',sheet = 3) %>% 
+  filter(Cancer=="CRC") %>% 
+  filter(!grepl("chrX", peak)) %>% 
+  filter(!grepl("chrY", peak))
+crc_peaks_not_fch = anti_join(crc_peaks,crc_peaks_top_fch)
 
+total_simulated_peaks <- nrow(crc_peaks)
+fixed_peaks <- rep(x = "fixed",nrow(crc_peaks_top_fch))
+changing_peaks <- rep(x = "fluctuating",nrow(crc_peaks_not_fch)*0.4)
+clone_peaks<- rep(x = "clonal",nrow(crc_peaks_not_fch)*0.6)
+
+# fixed_peaks <- rep(x = "fixed",total_simulated_peaks*0.3)
+# changing_peaks <- rep(x = "fluctuating",total_simulated_peaks*0.2)
+# clone_peaks<- rep(x = "clonal",total_simulated_peaks*0.5)
 # df_peak_types <- data.frame(peak_id=paste0("peak_",seq_along(1:total_simulated_peaks)),
-#                             type=c(fixed_peaks,changing_peaks)) 
-crc_peaks<- readRDS("crc_peaks.rds")
-df_peak_types <- crc_peaks %>% head(100) %>% 
+#                             type=c(fixed_peaks,changing_peaks))
+
+df_peak_types <- crc_peaks %>% 
   mutate(type=c(fixed_peaks,changing_peaks,clone_peaks))
+
 df_peak_types <- df_peak_types %>% 
+  group_by(type) %>% 
+  mutate(n = n()) %>% 
+  ungroup() %>% 
+  mutate(mutant = NA_character_,
+         epistate = NA_character_)
+  
+clonal_idx <- df_peak_types$type == "clonal"
+nC <- sum(clonal_idx)
+
+A <- round(nC * 0.6)
+B <- nC - A
+
+df_peak_types$mutant[clonal_idx] <- sample(c(rep("A", A), rep("B", B)))
+df_peak_types$epistate[clonal_idx] <- sample(c("+", "-"), nC, replace = TRUE)
+df_peak_types <- df_peak_types %>%
   mutate(status=case_when(type=="fixed"~"open",
-                          TRUE ~"closed")) %>% 
-  mutate(mutant=c(rep(NA,100*0.5),rep("A",100*0.2),rep("B",100*0.3))) %>% 
-  mutate(epistate=c(rep(NA,100*0.5),rep("+",100*0.1),rep("-",100*0.1),rep("+",100*0.2),rep("-",100*0.1)))
+                          TRUE ~"closed")) %>%
+  separate(peak,into = c("chr","from","to"),sep = "-",remove = F) %>% 
+  mutate(from=as.numeric(from)) %>% 
+  mutate(to=as.numeric(to))
+
+# df_peak_types <- df_peak_types %>% 
+#   mutate(status=case_when(type=="fixed"~"open",
+#                           TRUE ~"closed")) %>% 
+#   mutate(mutant=c(rep(NA,100*0.5),rep("A",100*0.2),rep("B",100*0.3))) %>% 
+#   mutate(epistate=c(rep(NA,100*0.5),rep("+",100*0.1),rep("-",100*0.1),rep("+",100*0.2),rep("-",100*0.1)))
+
+
 df_peak_types %>% 
   filter(type=="clonal") %>% 
   mutate(clone=paste0(mutant,epistate)) %>% 
@@ -85,15 +124,16 @@ simulate_fluctating_peaks <- function(n = 1, P, states) {
 
 
 cna_data_sim <- phylo_forest$get_cell_allelic_fragmentation()
-
-#### convert to absolute coordinates
-genome_coordinates <- CNAqc::gene_coordinates_GRCh38
-vfrom = genome_coordinates$from
-names(vfrom) = genome_coordinates$chr
 cna_data_sim = cna_data_sim %>% 
-  mutate(chr=paste0('chr',chr)) %>% 
-  mutate(from = begin + vfrom[chr],
-         to = end + vfrom[chr])
+  mutate(chr=paste0('chr',chr))
+#### convert to absolute coordinates
+# genome_coordinates <- CNAqc::gene_coordinates_GRCh38
+# vfrom = genome_coordinates$from
+# names(vfrom) = genome_coordinates$chr
+# cna_data_sim = cna_data_sim %>% 
+#   mutate(chr=paste0('chr',chr)) %>% 
+#   mutate(from = begin + vfrom[chr],
+#          to = end + vfrom[chr])
 labelling_functor1 <- function(label, node) {
   
   
@@ -180,7 +220,7 @@ labelling_functor2 <- function(label, node) {
   
   
   # the nodes are labelled by the identifiers of the associated cells
-  # cell_id_node =82903
+  # cell_id_node =115001
   cell_id_node = node$cell_id
   cell_mutant = phylo_forest$get_nodes() %>% 
     filter(cell_id==cell_id_node) %>% 
@@ -190,6 +230,8 @@ labelling_functor2 <- function(label, node) {
     pull(epistate)
   
   cell_cna = cna_data_sim %>% filter(cell_id==cell_id_node) %>% 
+    dplyr::rename(from=begin) %>% 
+    dplyr::rename(to=end) %>% 
     select(chr,major,minor,from,to)
   
   if (nrow(cell_cna)!=0){
@@ -225,6 +267,8 @@ labelling_functor3 <- function(label, node) {
     pull(epistate)
   
   cell_cna = cna_data_sim %>% filter(cell_id==cell_id_node) %>% 
+    dplyr::rename(from=begin) %>% 
+    dplyr::rename(to=end) %>% 
     select(chr,major,minor,from,to)
   
   if (nrow(cell_cna)!=0){
@@ -245,7 +289,7 @@ labelling_functor3 <- function(label, node) {
     )
     df_peak_with_cna <- as.data.frame(res) %>% 
       mutate(tot_cn=major+minor) %>% 
-      dplyr::select(cell_id,peak_id,tot_cn)
+      dplyr::select(cell_id,peak,tot_cn)
   } else {
     df_peak_with_cna <- df_peak_types %>%
       mutate(cell_id=cell_id_node) %>% 
@@ -267,6 +311,7 @@ while (!tour_peaks$done) {
   # print(tour$value)
   list_peaks_final[[i]] <- tour_peaks$value
   i=i+1
+  print(i)
   tour_peaks$step()
 }
 end <- Sys.time()
@@ -289,17 +334,17 @@ df_peak_cna_final <- do.call("rbind",list_peak_cna_final)
 
 ########
 
-df_peak_final <- df_peak_final %>% dplyr::select(cell_id,label.peak_id,label.status) %>% 
+df_peak_final <- df_peak_final %>% dplyr::select(cell_id,label.peak,label.status) %>% 
   mutate(status=case_when(label.status=="open"~1,
                           TRUE~0)) %>% 
-  dplyr::rename(peak_id=label.peak_id) %>% 
+  dplyr::rename(peak_id=label.peak) %>% 
   dplyr::select(cell_id,peak_id,status)
-df_peak_cna_final <- df_peak_cna_final %>% dplyr::select(cell_id,label.peak_id,label.tot_cn) %>% 
-  dplyr::rename(peak_id=label.peak_id) %>% 
+df_peak_cna_final <- df_peak_cna_final %>% dplyr::select(cell_id,label.peak,label.tot_cn) %>% 
+  dplyr::rename(peak_id=label.peak) %>% 
   dplyr::rename(tot_cn=label.tot_cn) %>% 
   dplyr::select(cell_id,peak_id,tot_cn)
 cell_info <- sample_forest$get_nodes()
-saveRDS(object = df_peak_cna_final,file = "df_peak_cna_final.rds")
-saveRDS(object = df_peak_final,file = "df_peak_final.rds")
+saveRDS(object = df_peak_cna_final,file = "df_peak_cna_final_big.rds")
+saveRDS(object = df_peak_final,file = "df_peak_final_big.rds")
 
-saveRDS(object = cell_info,file = "cell_info.rds")
+saveRDS(object = cell_info,file = "cell_info_big.rds")
