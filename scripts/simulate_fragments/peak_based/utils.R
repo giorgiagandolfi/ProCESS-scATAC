@@ -51,14 +51,16 @@ sample_fragment_size <- function(n) {
 }
 
 ##### Place fragments 
-
-place_fragments <- function(start, fragments_sizes,gaps_sizes) {
+### old version
+place_fragments_old <- function(start, fragments_sizes,gaps_sizes) {
   n <- length(fragments_sizes)
   from <- numeric(n)
   to <- numeric(n)
   
   current <- start
-  
+  if (n>1){
+    gaps_sizes=gaps_sizes[-1]
+  }
   for (i in seq_along(fragments_sizes)) {
     if (i == 1){
       from[i] <- current
@@ -80,6 +82,34 @@ place_fragments <- function(start, fragments_sizes,gaps_sizes) {
                           from = from,
                           to = to)
   return(frg_pos_df)
+}
+
+place_fragments <- function(start, fragments_sizes, gaps_sizes) {
+  
+  n <- length(fragments_sizes)
+  
+  if (length(gaps_sizes) != n) {
+    stop("gaps_sizes must have same length as fragments_sizes")
+  }
+  
+  from <- numeric(n)
+  to <- numeric(n)
+  
+  from[1] <- start
+  to[1] <- start + fragments_sizes[1] - 1
+  
+  if (n > 1) {
+    for (i in 2:n) {
+      from[i] <- to[i - 1] + gaps_sizes[i] + 1
+      to[i] <- from[i] + fragments_sizes[i] - 1
+    }
+  }
+  
+  data.frame(
+    fragment = paste0("fragm_", seq_len(n)),
+    from = from,
+    to = to
+  )
 }
 
 place_fragments_in_peak <- function(fragments_sizes, gaps_sizes,peak_id,peak_from,peak_to,sd_peak_center=30){
@@ -268,7 +298,9 @@ sample_fragments_for_peak_vec <- function(
       
       sizes <- sizes[keep]
       gaps  <- gaps[keep]
-      
+      print(peak_id[k])
+      print(gaps)
+      print(sizes)
       # vectorized fragment placement
       peaks_frags_df <- place_fragments_in_peak(fragments_sizes = sizes,
                                                 gaps_sizes = gaps,
@@ -289,18 +321,10 @@ sample_fragments_for_peak_vec <- function(
 
     }
     
-    results[[k]] <- data.table::rbindlist(
-      allele_results,
-      use.names = TRUE,
-      fill = TRUE
-    )
+    results[[k]] <- do.call("rbind",allele_results)
   }
   
-  data.table::rbindlist(
-    results,
-    use.names = TRUE,
-    fill = TRUE
-  )
+  do.call("rbind",results)
 }
 
 
