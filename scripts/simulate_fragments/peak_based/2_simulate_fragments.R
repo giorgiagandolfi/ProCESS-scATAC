@@ -6,7 +6,7 @@ library(tidyverse)
 library(data.table)
 library(parallel)
 source("utils.R")
-set.seed(12345)
+# set.seed(12345)
 args <- commandArgs(trailingOnly = TRUE)
 cell_idx <- as.numeric(args[1])
 # cells_interval <- as.numeric(args[1])
@@ -83,7 +83,7 @@ end - start
 frag_res_all_cells <- frag_res_all_cells %>% inner_join(cell_info)
 saveRDS(object = frag_res_all_cells,file = paste0('cell_',selected_cells,'_all_fragments.rds'))
 ###### create bed file
-dir.create(path = "fragments_cells_big")
+dir.create(path = "fragments_cells_big_correct")
 sampled_cells = cell_info %>% filter(!is.na(sample)) %>% pull(cell_id) %>% unique()
 
 # genome_coordinates = readRDS('genome_coordinates_hg38.rds')
@@ -99,7 +99,7 @@ bed_files = lapply(selected_cells,function(c){
   # bed_single_cell$start_rel <- bed_single_cell$fragment_start - chr_start + 1
   # bed_single_cell$end_rel   <- bed_single_cell$fragment_end   - chr_start + 1
   # bed_single_cell = bed_single_cell %>% dplyr::select(chr,start_rel,end_rel,fragment_id)
-  write.table(x = bed_single_cell,file = paste0("fragments_cells_big/cell_",c,".bed"),append = F,quote = F,sep = "\t",row.names = F,col.names = F)
+  write.table(x = bed_single_cell,file = paste0("fragments_cells_big_correct/cell_",c,".bed"),append = F,quote = F,sep = "\t",row.names = F,col.names = F)
 })
 
 
