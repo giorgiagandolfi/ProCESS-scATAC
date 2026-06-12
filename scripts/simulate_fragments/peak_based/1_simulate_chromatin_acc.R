@@ -3,6 +3,7 @@ library(ProCESS)
 library(dplyr)
 # library(ggplot2)
 library(tidyverse)
+library(readxl)
 # library(ComplexHeatmap)
 # library(circlize)
 # library(data.table)
@@ -32,9 +33,9 @@ sample_cols <- c(
 ####### define the markov chain of open-closed chromatin
 # crc_peaks<- readRDS("crc_peaks.rds")
 crc_peaks <- read_excel('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/41586_2023_6682_MOESM4_ESM.xlsx',sheet = 1) %>% 
-  filter(Cancer=="CRC") %>% 
-  filter(!grepl("chrX", peak)) %>% 
-  filter(!grepl("chrY", peak))
+  dplyr::filter(Cancer=="CRC") %>% 
+  dplyr::filter(!grepl("chrX", peak)) %>% 
+  dplyr::filter(!grepl("chrY", peak))
 crc_peaks_top_fch <- read_excel('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/41586_2023_6682_MOESM4_ESM.xlsx',sheet = 3) %>% 
   filter(Cancer=="CRC") %>% 
   filter(!grepl("chrX", peak)) %>% 
