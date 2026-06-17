@@ -12,6 +12,25 @@ cell_idx <- as.numeric(args[1])
 # cells_interval <- as.numeric(args[1])
 # cell_range <- eval(parse(text = cells_interval))
 
+
+########## DESCRIPTION #############
+# Input for this script:
+# 1. simulated binary matrix
+# cell_id                  peak_id status
+# 1   54144     chr1-1006219-1006719      1
+# 2   54144     chr1-1068981-1069481      1
+# 3   54144   chr1-10694533-10695033      1
+# 2. single cell tot CN of peak
+# cell_id              peak_id tot_cn
+# 1   54144 chr1-1006219-1006719      2
+# 2   54144 chr1-1068981-1069481      2
+# 3   54144 chr1-1136649-1137149      2
+# 4   54144 chr1-1157303-1157803      2
+# 5   54144 chr1-1158100-1158600      2
+# 6   54144 chr1-1162517-1163017      2
+
+
+
 selected_frags_dist_len = readRDS("chr1_selected_frags_dist_len.rds")
 df_peak_final = readRDS("df_peak_final_big.rds")
 df_peak_cna_final = readRDS("df_peak_cna_final_big.rds")
@@ -79,30 +98,40 @@ end <- Sys.time()
 end - start
 
 ### get cell info into peaks
-
-frag_res_all_cells <- frag_res_all_cells %>% inner_join(cell_info)
-saveRDS(object = frag_res_all_cells,file = paste0('cell_',selected_cells,'_all_fragments.rds'))
-###### create bed file
 dir.create(path = "fragments_cells_big_correct")
+frag_res_all_cells <- frag_res_all_cells %>% inner_join(cell_info)
+saveRDS(object = frag_res_all_cells,file = paste0('fragments_cells_big_correct/cell_',selected_cells,'_all_fragments.rds'))
+###### create bed file
+
 sampled_cells = cell_info %>% filter(!is.na(sample)) %>% pull(cell_id) %>% unique()
 
-# genome_coordinates = readRDS('genome_coordinates_hg38.rds')
-bed_files = lapply(selected_cells,function(c){
-  bed_single_cell =frag_res_all_cells %>% 
-    filter(cell_id==c) %>% 
-    mutate(fragment_start=round(fragment_start,0)) %>% 
-    mutate(fragment_end=round(fragment_end,0)) %>% 
-    mutate(fragment_id=paste(fragment_chr,fragment_start,fragment_end,allele,peak_id,sep=":")) %>%
-    dplyr::select(fragment_chr,fragment_start,fragment_end,fragment_id)
-  print(c)
-  # chr_start <- genome_coordinates$from[genome_coordinates$chr == "chr22"]
-  # bed_single_cell$start_rel <- bed_single_cell$fragment_start - chr_start + 1
-  # bed_single_cell$end_rel   <- bed_single_cell$fragment_end   - chr_start + 1
-  # bed_single_cell = bed_single_cell %>% dplyr::select(chr,start_rel,end_rel,fragment_id)
-  write.table(x = bed_single_cell,file = paste0("fragments_cells_big_correct/cell_",c,".bed"),append = F,quote = F,sep = "\t",row.names = F,col.names = F)
+library(data.table)
+library(dplyr)
+
+bed_files = lapply(selected_cells, function(c){
+
+  bed_single_cell <- frag_res_all_cells %>% 
+    filter(cell_id == c) %>% 
+    mutate(
+      fragment_start = formatC(round(fragment_start, 0), format = "f", digits = 0),
+      fragment_end   = formatC(round(fragment_end, 0), format = "f", digits = 0),
+      fragment_id = paste(fragment_chr, fragment_start, fragment_end, allele, peak_id, sep=":")
+    ) %>%
+    select(fragment_chr, fragment_start, fragment_end, fragment_id)
+
+  # convert to data.table (fast)
+  setDT(bed_single_cell)
+
+  fwrite(
+    bed_single_cell,
+    file = paste0("fragments_cells_big_correct/cell_", c, ".bed"),
+    sep = "\t",
+    col.names = FALSE,
+    quote = FALSE,
+    nThread = parallel::detectCores()
+  )
+
 })
-
-
 ########## plot heatmap ###########
 
 

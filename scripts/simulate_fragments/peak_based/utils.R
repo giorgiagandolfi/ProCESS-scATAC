@@ -15,11 +15,11 @@ rztpois <- function(n, lambda) {
 
 #### Function to sample fragment counts for each peak
 sample_fragment_count <- function(lambda = 0.1,
-                                  max_count = 20) {
+                                  max_count = 20,accessibility_score=NULL) {
   
   repeat {
     
-    x <- rztpois(1, lambda)
+    x <- rztpois(1, (lambda*accessibility_score))
     
     if (x <= max_count) {
       return(x)
@@ -305,7 +305,7 @@ sample_fragments_for_peak_vec <- function(
       peaks_frags_df <- place_fragments_in_peak(fragments_sizes = sizes,
                                                 gaps_sizes = gaps,
                                                 peak_id = peak_id[k],peak_from = peak_from[k],
-                                                peak_to = peak_to[k])
+                                                peak_to = peak_to[k],sd_peak_center=100)
       
       allele_results[[allele]] <- peaks_frags_df %>% mutate(allele=paste0('allele_',allele)) %>% 
         mutate(peak_id = peak_id[k],
