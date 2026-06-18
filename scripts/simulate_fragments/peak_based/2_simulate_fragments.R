@@ -44,58 +44,62 @@ print(selected_cells)
 start=Sys.time()
 
 
+peak_cell <- df_peak_final %>% 
+  filter(cell_id == selected_cells) %>% 
+  filter(status == 1) %>% 
+  separate(
+    peak_id,
+    into = c("chr","from","to"),
+    sep = "-",
+    remove = FALSE
+  )
+
+peak_cna_cell <- df_peak_cna_final %>% 
+  inner_join(peak_cell)
+
+chromosomes <- peak_cna_cell %>% 
+  pull(chr) %>% 
+  unique()
 
 
-frag_res_all_cells <- mclapply(
-  selected_cells,
-  mc.cores = detectCores() - 1,
-  function(c){
-    
-    peak_cell <- df_peak_final %>% 
-      filter(cell_id == c) %>% 
-      filter(status == 1) %>% 
-      separate(
-        peak_id,
-        into = c("chr","from","to"),
-        sep = "-",
-        remove = FALSE
-      )
-    
-    peak_cna_cell <- df_peak_cna_final %>% 
-      inner_join(peak_cell)
-    
-    chromosomes <- peak_cna_cell %>% 
-      pull(chr) %>% 
-      unique()
-    
-    chromosomes_frags <- lapply(chromosomes, function(chrom){
-      
-      peak_cna_cell_chr <- peak_cna_cell %>% 
-        filter(chr == chrom)
-      
-      peak_cell_chr <- peak_cell %>% 
-        filter(chr == chrom)
-      
-      fragm_df_cell <- sample_fragments_for_peak_vec(
-        peak_id   = peak_cell_chr$peak_id,
-        peak_chr=str_replace(chrom,pattern = "chr",replacement = ""),
-        peak_from = as.numeric(peak_cell_chr$from),
-        peak_to   = as.numeric(peak_cell_chr$to),
-        fragment_len_dist = selected_frags_dist_len,
-        tot_cn    = as.numeric(peak_cna_cell_chr$tot_cn),
-        cell_id   = c
-      ) %>% 
-        as.data.frame()
-      
-    }) %>% 
-      bind_rows()
-    
-  }
-) %>% 
-  bind_rows()
+chromosomes_frags <- mclapply(chromosomes, mc.cores = detectCores() - 1,
+                              function(chrom){
+  
+  peak_cna_cell_chr <- peak_cna_cell %>% 
+    filter(chr == chrom)
+  
+  peak_cell_chr <- peak_cell %>% 
+    filter(chr == chrom)
+  
+  fragm_df_cell <- sample_fragments_for_peak_vec(
+    peak_id   = peak_cell_chr$peak_id,
+    peak_chr=str_replace(chrom,pattern = "chr",replacement = ""),
+    peak_from = as.numeric(peak_cell_chr$from),
+    peak_to   = as.numeric(peak_cell_chr$to),
+    fragment_len_dist = selected_frags_dist_len,
+    tot_cn    = as.numeric(peak_cna_cell_chr$tot_cn),
+    cell_id   = selected_cells
+  ) %>%  as.data.frame()
+}) %>% bind_rows()
+
+
 end <- Sys.time()
 
 end - start
+
+
+cell_bg_regions <- get_background_regions(peak_df = peak_cell,genome = 'hg38',
+                                          gaps_file = '/data/rds/DMP/UCEC/GENEVOD/ggandolfi/10x_atac_data/gap.txt.gz',
+                                          centromeres_file = '/data/rds/DMP/UCEC/GENEVOD/ggandolfi/10x_atac_data/cytoBand.txt.gz')
+
+frag_len_out_peak = final_mapping %>% 
+  filter(region_type=='out peak') %>% 
+  # ggplot(aes(x=fragment_len))+geom_density()
+  pull(fragment_len)
+frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
+
+
+background_frg=simulate_background_fragments(background_regions = cell_bg_regions,lambda_per_kb = 0.01,frag_len_out_peak_dens = frag_len_out_peak_dens)
 
 ### get cell info into peaks
 dir.create(path = "fragments_cells_big_correct")
