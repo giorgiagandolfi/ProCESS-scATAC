@@ -1,4 +1,4 @@
-library(extraDistr)
+# library(extraDistr)
 library(data.table)
 library(Matrix)
 rztpois <- function(n, lambda) {
@@ -339,8 +339,8 @@ get_background_regions <- function(peak_df,genome,gaps_file,centromeres_file){
   # 5    chr1-109763665-109764165     chr1  109763665 109764165
   # 6    chr1-111204245-111204745     chr1  111204245 111204745
   gr_peak_union = GRanges(
-    seqnames = peak_df$peak_chr,
-    ranges = IRanges(start = peak_df$peak_start, end = peak_df$peak_end),
+    seqnames = peak_df$chr,
+    ranges = IRanges(start = peak_df$from, end = peak_df$to),
   )
   if (genome=='hg38'){
     gr_genome <- GRanges(
@@ -422,7 +422,7 @@ get_background_regions <- function(peak_df,genome,gaps_file,centromeres_file){
     c(blacklist_gr, centromeres, assembly_gaps)
   )
   standard_chromosomes <- paste0('chr',seq_along(1:22))
-  bg <- as.data.frame(background_gr) %>% 
+  bg <- as.data.frame(gr_background) %>% 
     filter(seqnames%in%standard_chromosomes)
   colnames(bg)<-c('bg_chr','bg_start','bg_end','bg_width','bg_strand')
   return(bg)
@@ -430,26 +430,27 @@ get_background_regions <- function(peak_df,genome,gaps_file,centromeres_file){
 
 simulate_background_fragments <- function(
     background_regions,
-    lambda_per_kb = 1,
+    lambda_per_kb = 0.01,
     frag_len_out_peak_dens
 ) {
   
   # Convert to dataframe
-  standard_chromosomes <- paste0('chr',seq_along(1:23))
-  bg <- as.data.frame(background_gr) %>% 
-    filter(seqnames%in%standard_chromosomes)
+  standard_chromosomes <- paste0('chr',seq_along(1:22))
+  bg <- background_regions %>% 
+    filter(bg_chr%in%standard_chromosomes) %>% 
+    filter(bg_width>=150)
   
   
   
   # total background size per chromosome
   chr_sizes <- bg %>%
-    group_by(seqnames) %>%
-    summarise(total_bp = sum(width))
+    group_by(bg_chr) %>%
+    summarise(total_bp = sum(bg_width))
   
   # 1. simulate fragment counts per chromosome
   chr_sizes <- chr_sizes %>%
     mutate(
-      lambda = lambda_per_kb * total_bp / 1000,
+      lambda = lambda_per_kb * total_bp / 10000,
       n_frag = rpois(n(), lambda)
     )
   
@@ -457,7 +458,7 @@ simulate_background_fragments <- function(
   
   for (i in seq_len(nrow(chr_sizes))) {
     
-    chr <- chr_sizes$seqnames[i]
+    chr <- chr_sizes$bg_chr[i]
     n <- chr_sizes$n_frag[i]
     
     if (n == 0)
@@ -465,7 +466,7 @@ simulate_background_fragments <- function(
     
     # background intervals for this chromosome
     chr_bg <- bg %>%
-      filter(seqnames == chr)
+      filter(bg_chr == chr)
     
     # sample interval
     interval_idx <- sample(
@@ -475,14 +476,14 @@ simulate_background_fragments <- function(
     )
     
     sampled_intervals <- chr_bg[interval_idx, ]
-    
+    # sampled_intervals <- distinct(sampled_intervals)
     # 2. sample start uniformly in background intervals
     starts <- mapply(
       function(s, e) {
         sample(seq(s, e), 1)
       },
-      sampled_intervals$start,
-      sampled_intervals$end
+      sampled_intervals$bg_start,
+      sampled_intervals$bg_end
     )
     
     # 3. sample fragment 
@@ -500,7 +501,7 @@ simulate_background_fragments <- function(
     
     
     # remove fragments crossing background interval boundary
-    valid <- ends <= sampled_intervals$end
+    valid <- ends <= sampled_intervals$bg_end
     
     fragments[[i]] <- data.frame(
       frag_id = paste0("bg_frag_", seq_len(n))[valid],
@@ -513,4 +514,7 @@ simulate_background_fragments <- function(
   
   bind_rows(fragments)
 }
-
+get_epigenetic_activity<- function(activity,mutant,clone){
+  programs <- activity[[mutant]][[clone]]
+  return(programs)
+}

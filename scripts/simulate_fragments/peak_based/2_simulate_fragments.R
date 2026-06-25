@@ -1,9 +1,9 @@
 library(dplyr)
-library(ggplot2)
+# library(ggplot2)
 library(tidyverse)
-#library(ComplexHeatmap)
-# library(circlize)
-library(data.table)
+library(GenomicRanges)
+library(BSgenome.Hsapiens.UCSC.hg38)
+# library(data.table)
 library(parallel)
 source("utils.R")
 # set.seed(12345)
@@ -32,8 +32,10 @@ cell_idx <- as.numeric(args[1])
 
 
 selected_frags_dist_len = readRDS("chr1_selected_frags_dist_len.rds")
-df_peak_final = readRDS("df_peak_final_big.rds")
-df_peak_cna_final = readRDS("df_peak_cna_final_big.rds")
+df_peak_final = readRDS("input_data_P05/df_peak_final_big_new.rds")
+df_peak_cna_final = readRDS("input_data_P05/df_peak_cna_final_big_new..rds")
+
+
 cell_info = readRDS("cell_info_big.rds")
 # selected_cells =df_peak_final$cell_id %>% unique()
 # selected_cells =selected_cells[cell_range]
@@ -48,16 +50,30 @@ peak_cell <- df_peak_final %>%
   filter(cell_id == selected_cells) %>% 
   filter(status == 1) %>% 
   separate(
-    peak_id,
+    peak,
     into = c("chr","from","to"),
     sep = "-",
     remove = FALSE
-  )
+  ) %>% 
+  distinct() %>% 
+  mutate(from=as.numeric(from),
+         to=as.numeric(to))
 
 peak_cna_cell <- df_peak_cna_final %>% 
-  inner_join(peak_cell)
+  filter(cell_id == selected_cells) %>% 
+  filter(peak%in%peak_cell$peak) %>% 
+  distinct() %>% 
+  separate(
+    peak,
+    into = c("chr","from","to"),
+    sep = "-",
+    remove = FALSE
+  ) %>% 
+  mutate(from=as.numeric(from),
+         to=as.numeric(to))
 
-chromosomes <- peak_cna_cell %>% 
+
+chromosomes <- peak_cell %>% 
   pull(chr) %>% 
   unique()
 
@@ -72,7 +88,7 @@ chromosomes_frags <- mclapply(chromosomes, mc.cores = detectCores() - 1,
     filter(chr == chrom)
   
   fragm_df_cell <- sample_fragments_for_peak_vec(
-    peak_id   = peak_cell_chr$peak_id,
+    peak_id   = peak_cell_chr$peak,
     peak_chr=str_replace(chrom,pattern = "chr",replacement = ""),
     peak_from = as.numeric(peak_cell_chr$from),
     peak_to   = as.numeric(peak_cell_chr$to),
@@ -87,11 +103,11 @@ end <- Sys.time()
 
 end - start
 
-
+### extract regions that are not peak
 cell_bg_regions <- get_background_regions(peak_df = peak_cell,genome = 'hg38',
                                           gaps_file = '/data/rds/DMP/UCEC/GENEVOD/ggandolfi/10x_atac_data/gap.txt.gz',
                                           centromeres_file = '/data/rds/DMP/UCEC/GENEVOD/ggandolfi/10x_atac_data/cytoBand.txt.gz')
-
+final_mapping <- readRDS('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/10x_atac_data/genome_representation.rds')
 frag_len_out_peak = final_mapping %>% 
   filter(region_type=='out peak') %>% 
   # ggplot(aes(x=fragment_len))+geom_density()
@@ -99,22 +115,24 @@ frag_len_out_peak = final_mapping %>%
 frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
 
 
-background_frg=simulate_background_fragments(background_regions = cell_bg_regions,lambda_per_kb = 0.01,frag_len_out_peak_dens = frag_len_out_peak_dens)
+background_frg=simulate_background_fragments(background_regions = cell_bg_regions,
+                                             lambda_per_kb = 1.5,frag_len_out_peak_dens = frag_len_out_peak_dens)
 
 ### get cell info into peaks
-dir.create(path = "fragments_cells_big_correct")
-frag_res_all_cells <- frag_res_all_cells %>% inner_join(cell_info)
-saveRDS(object = frag_res_all_cells,file = paste0('fragments_cells_big_correct/cell_',selected_cells,'_all_fragments.rds'))
+dir.create(path = "fragments_cells_big_with_background")
+chromosomes_frags <- chromosomes_frags %>% inner_join(cell_info)
+saveRDS(object = chromosomes_frags,file = paste0('fragments_cells_big_with_background/cell_',selected_cells,'_all_fragments.rds'))
 ###### create bed file
 
 sampled_cells = cell_info %>% filter(!is.na(sample)) %>% pull(cell_id) %>% unique()
 
-library(data.table)
-library(dplyr)
+
+
+
 
 bed_files = lapply(selected_cells, function(c){
 
-  bed_single_cell <- frag_res_all_cells %>% 
+  bed_single_cell_peak <- chromosomes_frags %>% 
     filter(cell_id == c) %>% 
     mutate(
       fragment_start = formatC(round(fragment_start, 0), format = "f", digits = 0),
@@ -122,13 +140,21 @@ bed_files = lapply(selected_cells, function(c){
       fragment_id = paste(fragment_chr, fragment_start, fragment_end, allele, peak_id, sep=":")
     ) %>%
     select(fragment_chr, fragment_start, fragment_end, fragment_id)
-
+  bed_single_cell_bg <- background_frg %>% 
+    mutate(
+      fragment_chr = str_remove(frag_chr,'chr'),
+      fragment_start = formatC(round(frag_start, 0), format = "f", digits = 0),
+      fragment_end   = formatC(round(frag_end, 0), format = "f", digits = 0),
+      fragment_id = paste(fragment_chr, fragment_start, fragment_end,sep=":")
+    ) %>%
+    select(fragment_chr, fragment_start, fragment_end, fragment_id)
   # convert to data.table (fast)
+  bed_single_cell <- rbind(bed_single_cell_peak,bed_single_cell_bg)
   setDT(bed_single_cell)
 
   fwrite(
     bed_single_cell,
-    file = paste0("fragments_cells_big_correct/cell_", c, ".bed"),
+    file = paste0("fragments_cells_big_with_background/cell_", c, ".bed"),
     sep = "\t",
     col.names = FALSE,
     quote = FALSE,
