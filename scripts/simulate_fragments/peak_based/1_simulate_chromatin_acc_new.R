@@ -170,11 +170,13 @@ df_peak_cna_final <- do.call("rbind",list_peak_cna_final)
 
 
 
-df_peak_final <- df_peak_final %>% dplyr::select(cell_id,label.peak,label.status) %>% 
+df_peak_final <- df_peak_final %>% 
+  # dplyr::select(cell_id,label.peak,label.status) %>% 
   dplyr::rename(peak=label.peak) %>% 
   dplyr::rename(status=label.status) #%>% 
   # dplyr::select(cell_id,peak,status)
-df_peak_cna_final <- df_peak_cna_final %>% dplyr::select(cell_id,label.peak,label.tot_cn) %>%
+df_peak_cna_final <- df_peak_cna_final %>% 
+  # dplyr::select(cell_id,label.peak,label.tot_cn) %>%
   dplyr::rename(peak=label.peak) %>%
   dplyr::rename(tot_cn=label.tot_cn) #%>%
   # dplyr::select(cell_id,peak,tot_cn)

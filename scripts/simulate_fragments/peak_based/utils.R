@@ -518,3 +518,66 @@ get_epigenetic_activity<- function(activity,mutant,clone){
   programs <- activity[[mutant]][[clone]]
   return(programs)
 }
+
+
+
+add_sparsity<- function(real_df,dropout_rate=0.7){
+  N_obs <- nrow(real_df)
+  N_real_zeros <- real_df %>%
+    filter(status == 0) %>%
+    nrow()
+  N_real_ones <- real_df %>%
+    filter(status == 1) %>%
+    nrow()
+  # current real zero proportion
+  real_zero_pct <- N_real_zeros / N_obs
+  # additional dropout needed among the existing ones
+  remaining_dropout <- dropout_rate - real_zero_pct
+  
+  # number of accessible peaks to remove
+  n_drop <- round(remaining_dropout * N_real_ones)
+  
+  # avoid negative values if already above target sparsity
+  if (n_drop < 0) {
+    n_drop <- 0
+  }
+  
+  # sample ONLY currently accessible peaks
+  set.seed(123)
+  drop_idx <- sample(
+    which(real_df$status == 1),
+    size = n_drop,
+    replace = FALSE
+  )
+  
+  # copy dataframe
+  df_dropout <- real_df
+  
+  # convert dropout peaks to zeros
+  df_dropout$status[drop_idx] <- 0
+  return(df_dropout)
+}
+
+
+library(dplyr)
+library(purrr)
+library(tibble)
+
+convert_activity_list<-function(activity_list){
+  activity_df <- imap_dfr(activity_list, function(cell, cell_name) {
+    
+    imap_dfr(cell, function(sign_values, sign_name) {
+      
+      tibble(
+        mutant = cell_name,
+        epistate = sign_name,
+        pathway = names(sign_values),
+        activity = as.numeric(sign_values)
+      )
+      
+    })
+  })
+  
+  return(activity_df)
+}
+
