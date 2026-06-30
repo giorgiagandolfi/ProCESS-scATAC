@@ -328,7 +328,7 @@ sample_fragments_for_peak_vec <- function(
 }
 
 
-get_background_regions <- function(peak_df,genome,gaps_file,centromeres_file){
+get_background_regions <- function(peak_fragments_df,genome,gaps_file,centromeres_file,filter_small_than=150){
   #### peak_df is a dataframe with all the peaks for that cell
   #### like this one
   # peak_id peak_chr peak_start  peak_end
@@ -338,9 +338,14 @@ get_background_regions <- function(peak_df,genome,gaps_file,centromeres_file){
   # 4    chr1-108559703-108560203     chr1  108559703 108560203
   # 5    chr1-109763665-109764165     chr1  109763665 109764165
   # 6    chr1-111204245-111204745     chr1  111204245 111204745
+  peak_region_df <- peak_fragments_df %>% 
+    group_by(peak) %>% 
+    summarise(start_peak_region=min(fragment_start),
+              end_peak_region=max(fragment_end),
+              chr_peak_region=paste0('chr',unique(fragment_chr)))
   gr_peak_union = GRanges(
-    seqnames = peak_df$chr,
-    ranges = IRanges(start = peak_df$from, end = peak_df$to),
+    seqnames = peak_region_df$chr_peak_region,
+    ranges = IRanges(start = peak_region_df$start_peak_region, end = peak_region_df$end_peak_region),
   )
   if (genome=='hg38'){
     gr_genome <- GRanges(
@@ -423,7 +428,8 @@ get_background_regions <- function(peak_df,genome,gaps_file,centromeres_file){
   )
   standard_chromosomes <- paste0('chr',seq_along(1:22))
   bg <- as.data.frame(gr_background) %>% 
-    filter(seqnames%in%standard_chromosomes)
+    filter(seqnames%in%standard_chromosomes) %>% 
+    filter(width>=filter_small_than)
   colnames(bg)<-c('bg_chr','bg_start','bg_end','bg_width','bg_strand')
   return(bg)
 }
@@ -437,8 +443,7 @@ simulate_background_fragments <- function(
   # Convert to dataframe
   standard_chromosomes <- paste0('chr',seq_along(1:22))
   bg <- background_regions %>% 
-    filter(bg_chr%in%standard_chromosomes) %>% 
-    filter(bg_width>=150)
+    filter(bg_chr%in%standard_chromosomes)
   
   
   
@@ -466,25 +471,26 @@ simulate_background_fragments <- function(
     
     # background intervals for this chromosome
     chr_bg <- bg %>%
-      filter(bg_chr == chr)
+      filter(bg_chr == chr) %>% 
+      mutate(bg_start_100bb=bg_start-100,
+             bg_end_100bb=bg_end+100) %>% 
+      mutate(bg_width_flank=bg_end_100bb-bg_start_100bb) %>% 
+      filter(bg_width_flank>0)
     
-    # sample interval
-    interval_idx <- sample(
+    # probability proportional to interval width
+    idx <- sample(
       seq_len(nrow(chr_bg)),
       size = n,
-      replace = TRUE
+      replace = TRUE,
+      prob = chr_bg$bg_width_flank
     )
     
-    sampled_intervals <- chr_bg[interval_idx, ]
-    # sampled_intervals <- distinct(sampled_intervals)
-    # 2. sample start uniformly in background intervals
-    starts <- mapply(
-      function(s, e) {
-        sample(seq(s, e), 1)
-      },
-      sampled_intervals$bg_start,
-      sampled_intervals$bg_end
-    )
+    # sample a position within each selected interval
+    starts <- chr_bg$bg_start_100bb[idx] + sample.int(
+      max(chr_bg$bg_width_flank),
+      n,
+      replace = TRUE
+    ) %% chr_bg$bg_width_flank[idx]
     
     # 3. sample fragment 
     frag_sampler <- function(my_frag_leng_dist,n) {
@@ -501,14 +507,14 @@ simulate_background_fragments <- function(
     
     
     # remove fragments crossing background interval boundary
-    valid <- ends <= sampled_intervals$bg_end
+    # valid <- ends <= chr_bg$bg_end
     
     fragments[[i]] <- data.frame(
-      frag_id = paste0("bg_frag_", seq_len(n))[valid],
+      frag_id = paste0("bg_frag_", seq_len(n)),
       frag_chr = chr,
-      frag_start = starts[valid],
-      frag_end = ends[valid],
-      frag_size = frag_size[valid]
+      frag_start = starts,
+      frag_end = ends,
+      frag_size = frag_size
     )
   }
   

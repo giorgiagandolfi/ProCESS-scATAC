@@ -32,13 +32,9 @@ cell_idx <- as.numeric(args[1])
 
 
 selected_frags_dist_len = readRDS("chr1_selected_frags_dist_len.rds")
-df_peak_final = readRDS("input_data_P05/df_peak_final_big_new.rds")
-df_peak_cna_final = readRDS("input_data_P05/df_peak_cna_final_big_new.rds")
+df_peak_final = readRDS("input_data_P05/df_peak_final_big_new_sparse_filtered.rds")
+df_peak_cna_final = readRDS("input_data_P05/df_peak_final_big_new_filtered.rds")
 
-### add sparsity
-df_peak_final_dropout <- add_sparsity(real_df = df_peak_final,dropout_rate = 0.95)
-saveRDS(object = df_peak_final_dropout,file = "input_data_P05/df_peak_final_big_new_sparse.rds")
-df_peak_final <- df_peak_final_dropout
 
 df_peak_final <- df_peak_final %>% 
   dplyr::select(cell_id,peak,status)
@@ -46,7 +42,6 @@ df_peak_cna_final <- df_peak_cna_final %>%
   dplyr::select(cell_id,peak,tot_cn)
 
 
-df_peak_final <- df_peak_final_dropout
 cell_info = readRDS("cell_info_big.rds")
 # selected_cells =df_peak_final$cell_id %>% unique()
 # selected_cells =selected_cells[cell_range]
@@ -115,8 +110,8 @@ end <- Sys.time()
 end - start
 message("Peak fragments generated")
 ### extract regions that are not peak
-cell_bg_regions <- get_background_regions(peak_df = peak_cell,genome = 'hg38',
-                                          gaps_file = 'gap.txt.gz',
+cell_bg_regions <- get_background_regions(peak_fragments_df = chromosomes_frags,genome = 'hg38',
+                                          gaps_file = 'gap.txt.gz',filter_small_than = 150,
                                           centromeres_file = 'cytoBand.txt.gz')
 final_mapping <- readRDS('genome_representation.rds')
 frag_len_out_peak = final_mapping %>% 
@@ -132,9 +127,11 @@ background_frg=simulate_background_fragments(background_regions = cell_bg_region
 
 message("Background fragments generated")
 ### get cell info into peaks
-dir.create(path = "fragments_cells_big_with_background_01_lambda_sparsity_095")
+outidr <- "fragments_cells_big_with_background_01_lambda_sparsity_070_filtered_peaks/"
+
+dir.create(path = outidr)
 chromosomes_frags <- chromosomes_frags %>% inner_join(cell_info)
-saveRDS(object = chromosomes_frags,file = paste0('fragments_cells_big_with_background_01_lambda_sparsity_095/cell_',selected_cells,'_all_fragments.rds'))
+saveRDS(object = chromosomes_frags,file = paste0(outidr,'cell_',selected_cells,'_all_fragments.rds'))
 ###### create bed file
 
 sampled_cells = cell_info %>% filter(!is.na(sample)) %>% pull(cell_id) %>% unique()
@@ -167,7 +164,7 @@ bed_files = lapply(selected_cells, function(c){
 
   fwrite(
     bed_single_cell,
-    file = paste0("fragments_cells_big_with_background/cell_", c, ".bed"),
+    file = paste0(outidr,"cell_", c, ".bed"),
     sep = "\t",
     col.names = FALSE,
     quote = FALSE,

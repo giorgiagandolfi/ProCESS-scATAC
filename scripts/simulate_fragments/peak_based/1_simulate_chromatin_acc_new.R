@@ -47,7 +47,7 @@ phylo_forest <- load_phylogenetic_forest("phylo_forest_atac_epigenetic.sff")
 # )
 
 activity <- readRDS('input_data_P05/activity_list.rds')
-peaks <-  readRDS('input_data_P05/all_peaks_df.rds') %>% 
+peaks <-  readRDS('input_data_P05/all_peaks_filtered_df.rds') %>% 
   dplyr::rename(process=pathway)
 
 cna_data_sim <- phylo_forest$get_cell_allelic_fragmentation()
@@ -181,7 +181,11 @@ df_peak_cna_final <- df_peak_cna_final %>%
   dplyr::rename(tot_cn=label.tot_cn) #%>%
   # dplyr::select(cell_id,peak,tot_cn)
 cell_info <- sample_forest$get_nodes()
-saveRDS(object = df_peak_cna_final,file = "input_data_P05/df_peak_cna_final_big_new.rds")
-saveRDS(object = df_peak_final,file = "input_data_P05/df_peak_final_big_new.rds")
+
+df_peak_final_dropout <- add_sparsity(real_df = df_peak_final,dropout_rate = 0.70)
+saveRDS(object = df_peak_final_dropout,file = "input_data_P05/df_peak_final_big_new_sparse_filtered.rds")
+
+saveRDS(object = df_peak_cna_final,file = "input_data_P05/df_peak_cna_final_big_new_filtered.rds")
+saveRDS(object = df_peak_final,file = "input_data_P05/df_peak_final_big_new_filtered.rds")
 print("Done")
 # saveRDS(object = cell_info,file = "cell_info_big.rds")
