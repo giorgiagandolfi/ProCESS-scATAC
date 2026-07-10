@@ -38,7 +38,7 @@ sample_fragment_size <- function(n) {
   )
   
   if (comp == 1) {
-    size <- rtnorm(1, mean = 50, sd = 40,a = 1,b=150)
+    size <- rnorm(1, mean = 50, sd = 40,a = 1,b=150)
   } else if (comp == 2) {
     size <- rnorm(1, mean = 200, sd = 50)
   } else if (comp == 3) {
@@ -307,7 +307,7 @@ sample_fragments_for_peak_vec <- function(
                                                 peak_id = peak_id[k],peak_from = peak_from[k],
                                                 peak_to = peak_to[k],sd_peak_center=100)
       
-      allele_results[[allele]] <- peaks_frags_df %>% mutate(allele=paste0('allele_',allele)) %>% 
+      allele_results[[allele]] <- peaks_frags_df %>% mutate(fragment_allele=paste0('allele_',allele)) %>% 
         mutate(peak_id = peak_id[k],
                peak_chr=peak_chr,
                peak_from = peak_from[k],
