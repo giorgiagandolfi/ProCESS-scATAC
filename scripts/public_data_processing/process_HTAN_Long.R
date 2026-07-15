@@ -21,7 +21,7 @@ dfs <- c("CRC_CM618C1-T1Y2.rds","CRC_CM618C2-S1Y2.rds")
 seurat_obj_list <- list()
 for (dat in dfs) {
   print(dat)
-  tmp <- readRDS(file.path(dir_ATAC, dat))
+  tmp <- readRDS(file.path(dir_ATAC, "level_4",dat))
   seurat_obj_list[[dat]] = tmp
 }
 

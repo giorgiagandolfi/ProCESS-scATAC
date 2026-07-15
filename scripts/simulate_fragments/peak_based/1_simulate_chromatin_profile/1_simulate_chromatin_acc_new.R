@@ -3,7 +3,22 @@ library(ProCESS)
 library(dplyr)
 library(tidyverse)
 library(readxl)
+library(parallel)
 source("utils.R")
+
+args <- commandArgs(trailingOnly = TRUE)
+#### acticity and gene files
+activity_list_file <- (args[1])
+peak_df_file <- (args[2])
+
+
+#### phylo forest path
+phylo_forest_file <- args[3]
+
+
+#### outfiles
+out_cna_file <- (args[4])
+out_peak_acc_file <- (args[5])
 ##### The main inputs required for this script are:
 ##### for each of the simulated process an accessibility score
 ##### for all epigenetic clones
@@ -22,8 +37,8 @@ source("utils.R")
 # 4 chr1-167082621-167083121 CRC_TISSUE
 # 5 chr1-202085778-202086278 CRC_TISSUE
 # 6 chr1-20250565-20251065   CRC_TISSUE
-sample_forest <- load_sample_forest("sample_forest_atac_epigenome.sff")
-phylo_forest <- load_phylogenetic_forest("phylo_forest_atac_epigenetic.sff")
+# sample_forest <- load_sample_forest("sample_forest_atac_epigenome.sff")
+phylo_forest <- load_phylogenetic_forest(phylo_forest_file)
 
 # activity <- list(
 #   'A' = list('+'=c("P1"=0.9, "P2"=0.8, "P3"=0.2),
@@ -46,9 +61,10 @@ phylo_forest <- load_phylogenetic_forest("phylo_forest_atac_epigenetic.sff")
 #   process = c(rep("P1", n_peaks_P1), rep("P2", n_peaks_P2), rep("P3", n_peaks_P3))
 # )
 
-activity <- readRDS('input_data_P05/activity_list.rds')
-peaks <-  readRDS('input_data_P05/all_peaks_filtered_df.rds') %>% 
-  dplyr::rename(process=pathway)
+activity <- readRDS(activity_list_file)
+peaks <-  readRDS(peak_df_file) %>% 
+  # dplyr::rename(process=pathway)
+  dplyr::rename(process=gene)
 
 cna_data_sim <- phylo_forest$get_cell_allelic_fragmentation()
 cna_data_sim = cna_data_sim %>% 
@@ -59,31 +75,42 @@ labelling_functor_new <- function(label, node) {
   
   # the nodes are labelled by the identifiers of the associated cells
   cell_id_node = node$cell_id
-  cell_mutant = sample_forest$get_nodes() %>%
+  cell_mutant = phylo_forest$get_nodes() %>%
     filter(cell_id==cell_id_node) %>%
     pull(mutant)
-  cell_phenotype = sample_forest$get_nodes() %>%
+  cell_phenotype = phylo_forest$get_nodes() %>%
     filter(cell_id==cell_id_node) %>%
     pull(epistate)
   cell_clone <- paste0(cell_mutant,cell_phenotype)
   clone_programs <-get_epigenetic_activity(activity = activity,mutant = cell_mutant,clone=cell_phenotype)
   print(cell_mutant)
   print(cell_phenotype)
-  cell_activity_peaks <- list()
-  for (p in names(clone_programs)){
-    program_peaks <- peaks %>% filter(process==p)
-    a_score = clone_programs[p]
+  cell_activity_peaks <- mclapply(names(clone_programs), function(p) {
     
-    program_status = rbinom(nrow(program_peaks), size = 1, prob = a_score)
-    cell_activity_peaks[[p]]<-peaks %>%
-      filter(process==p) %>%
-      mutate(status=program_status) %>%
-      mutate(cell_id=cell_id_node) %>%
-      mutate(mutant=cell_mutant) %>%
-      mutate(epistate=cell_phenotype)
-  }
+    program_peaks <- peaks %>%
+      filter(process == p)
+    
+    a_score <- clone_programs[[p]]
+    
+    program_status <- rbinom(
+      n = nrow(program_peaks),
+      size = 1,
+      prob = a_score
+    )
+    
+    program_peaks %>%
+      mutate(
+        status = program_status,
+        cell_id = cell_id_node,
+        mutant = cell_mutant,
+        epistate = cell_phenotype
+      )
+    
+  }, mc.cores = detectCores() - 1)
   
-  final_peaks <- do.call("rbind",cell_activity_peaks)
+  names(cell_activity_peaks) <- names(clone_programs)
+  
+  final_peaks <- bind_rows(cell_activity_peaks, .id = "process_name")
   
   return(final_peaks)
 }
@@ -136,8 +163,8 @@ labelling_functor3 <- function(label, node) {
 }
 
 start <- Sys.time()
-tour_peaks <- get_label_tour(sample_forest, labelling_functor_new, only_leaves=TRUE)
-tour_cna <- get_label_tour(sample_forest, labelling_functor3, only_leaves=TRUE)
+tour_peaks <- get_label_tour(phylo_forest, labelling_functor_new, only_leaves=TRUE)
+tour_cna <- get_label_tour(phylo_forest, labelling_functor3, only_leaves=TRUE)
 end <- Sys.time()
 end - start
 
@@ -182,10 +209,10 @@ df_peak_cna_final <- df_peak_cna_final %>%
   # dplyr::select(cell_id,peak,tot_cn)
 cell_info <- sample_forest$get_nodes()
 
-df_peak_final_dropout <- add_sparsity(real_df = df_peak_final,dropout_rate = 0.70)
-saveRDS(object = df_peak_final_dropout,file = "input_data_P05/df_peak_final_big_new_sparse_filtered.rds")
+# df_peak_final_dropout <- add_sparsity(real_df = df_peak_final,dropout_rate = 0.85)
+# saveRDS(object = df_peak_final_dropout,file = "input_data_P05/df_peak_final_big_new_sparse_085_filtered.rds")
 
-saveRDS(object = df_peak_cna_final,file = "input_data_P05/df_peak_cna_final_big_new_filtered.rds")
-saveRDS(object = df_peak_final,file = "input_data_P05/df_peak_final_big_new_filtered.rds")
+saveRDS(object = df_peak_cna_final,file = out_cna_file)
+saveRDS(object = df_peak_final,file = out_peak_acc_file)
 print("Done")
 # saveRDS(object = cell_info,file = "cell_info_big.rds")

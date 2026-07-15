@@ -8,7 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --time=3:00:00
 #SBATCH --mem-per-cpu=4GB
-#SBATCH --array=0-130   # replace N
+#SBATCH --array=501-1143%200   # replace N=1143
 # -----------------------
 # Paths / container
 # -----------------------
@@ -38,7 +38,7 @@ OUT_BAM="${OUTDIR}/${CELL}.bam"
 
 echo "Processing $CELL"
 echo "BED: $BED"
-echo "OUT: $OUT"
+echo "OUT: $OUT"mac
 
 srun singularity exec "$IMAGE1" \
    bowtie2   --very-sensitive   -X 2000 \

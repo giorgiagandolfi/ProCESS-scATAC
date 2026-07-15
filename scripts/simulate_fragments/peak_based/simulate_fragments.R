@@ -6,8 +6,6 @@ library(tidyverse)
 library(Seurat)
 library(Signac)
 library(GenomicRanges)
-
-source("/data/rds/DMP/UCEC/GENEVOD/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/utils.R")
 dir_ATAC <- file.path("/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/snATACseq/")
 
 # peak_dataset <- read_xlsx("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/41586_2023_6682_MOESM4_ESM.xlsx",sheet = 1)
@@ -50,9 +48,15 @@ crc_peaks <- crc_peaks %>%
   mutate(from = from + vfrom[chr],
          to = to + vfrom[chr]) %>%
   mutate(peak_id=paste(chr,from,to,sep=":"))
-
-fragments_chr22=read.table(file = file.path(dir_ATAC,'level_3','CM618C1-S1-fragments-chr22.tsv'),header = F,sep = '\t')
+saveRDS(file="crc_peaks.rds",object = crc_peaks)
+fragments_chr22=read.table(file = file.path(dir_ATAC,'level_3',"chrom_split","chr8.fragments.tsv"),header = F,sep = '\t')
 colnames(fragments_chr22) =c('chr','start','end','barcode','readCount')
+selected_frags <-fragments_chr22 %>% 
+  mutate(fragment_len=end-start) 
+selected_frags_dist_len = selected_frags %>% pull(fragment_len)
+ggplot(selected_frags,aes(x=fragment_len))+geom_histogram(binwidth = 1)
+saveRDS(object = selected_frags_dist_len,file="selected_frags_dist_len.rds")
+
 ### select only a specifi cell type
 metadata=tumor_subset@meta.data %>% 
   dplyr::rename(barcode=Original_barcode)
@@ -64,6 +68,7 @@ selected_frags <-fragments_chr22 %>% filter(cell_type=='Tumor') %>%
          to = end + vfrom[chr]) %>% 
   mutate(fragment_len=to-from) 
 selected_frags_dist_len = selected_frags %>% pull(fragment_len)
+saveRDS(object = selected_frags_dist_len,file="selected_frags_dist_len.rds")
 set.seed(123)
 
 n_peaks <- nrow(crc_peaks)

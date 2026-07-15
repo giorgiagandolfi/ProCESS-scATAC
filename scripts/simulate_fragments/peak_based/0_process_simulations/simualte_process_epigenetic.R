@@ -3,12 +3,13 @@ library(ProCESS)
 library(dplyr)
 library(ggplot2)
 library(tidyverse)
-library(ComplexHeatmap)
-library(circlize)
+#library(ComplexHeatmap)
+#library(circlize)
 # source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/plot_muller.R")
 # source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/utils/DLP.R")
-source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-DLP/scripts/utils/utils_plot.R")
-setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/")
+#source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-DLP/scripts/utils/utils_plot.R")
+#setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/")
+#setwd("/data/rds/DMP/UCEC/GENEVOD/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based")
 sim_id <- "ATAC4"
 set.seed(0)
 
@@ -50,8 +51,8 @@ sim$run_up_to_size("B-", 2000)
 plot_tissue(sim,color_map = mutant_cols)+
   facet_wrap(~species)
 
-n_w <- n_h <- 10
-ncells <- 0.5 * n_w * n_h
+n_w <- n_h <- 25
+ncells <- 0.7 * n_w * n_h
 
 # Sampling ncells with random box sampling of boxes of size n_w x n_h
 bbox1 <- sim$search_sample(c("A" = ncells), n_w, n_h)
@@ -96,7 +97,8 @@ sample_forest <- sim$get_sample_forest()
 plot_forest(forest = sample_forest,color_map = mutant_cols)
 
 sample_forest$save("sample_forest_atac_epigenome.sff")
-setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/")
+#setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/") 
+setwd("process_references")
 m_engine <- MutationEngine(setup_code = "GRCh38",tumour_type = "COADREAD", context_sampling = 20)
 
 
@@ -125,8 +127,8 @@ m_engine$add_mutant(mutant_name = "B",
 m_engine$add_exposure(time = 0,coefficients = c(SBS1 = 0.15,SBS5 = 0.40,
                                                 SBS18 = 0.15,SBS17b = 0.20,ID1 = 0.40,ID2 = 0.40,ID18=0.2,SBS88 = 0.10))
 phylo_forest <- m_engine$place_mutations(sample_forest, num_of_preneoplatic_SNVs=800, num_of_preneoplatic_indels=200)
-phylo_forest$save("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/phylo_forest_atac_epigenetic.sff")
-
+#phylo_forest$save("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/phylo_forest_atac_epigenetic.sff")
+phylo_forest$save("../phylo_forest_atac_epigenetic.sff")
 
 # 
 # 

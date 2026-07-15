@@ -1,13 +1,12 @@
-# rm(list=ls())
 library(dplyr)
 library(purrr)
 library(tidyverse)
 library(readxl)
 library(GenomicRanges)
-source("utils.R")
+source("/data/rds/DMP/UCEC/GENEVOD/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/utils.R")
 
-
-
+#######
+# This script prepares the data in order to be used later on in ProCESS simulation
 ####### 
 
 crc_peaks <- read_excel('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/HTAN_data/41586_2023_6682_MOESM4_ESM.xlsx',sheet = 1) %>% 
@@ -23,34 +22,27 @@ crc_peaks_top_fch = crc_peaks_top_fch %>%
   separate(col = peak,into = c('seqnames','start','end'),sep = '-',remove = F) %>% 
   mutate(start=as.numeric(start),
          end=as.numeric(end))
-clonal_peaks = readRDS('input_data_P05/peak_per_pathways.rds')
+clonal_peaks = readRDS('/data/rds/DMP/UCEC/GENEVOD/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/input_data_P05/data/a_scores_per_gene_log1p_score.rds')
+
 clonal_peaks = clonal_peaks %>% 
   mutate(peak=paste(seqnames,start,end,sep='-'))
-# changing_peaks=readRDS('input_data_P05/changing_peaks.rds')
-# changing_peaks = changing_peaks %>% 
-#   mutate(peak=paste(seqnames,start,end,sep='-'))
+
 gr_clonal_peaks = GRanges(
   seqnames = clonal_peaks$seqnames,
   ranges = IRanges(start = clonal_peaks$start, end = clonal_peaks$end),
-  score = clonal_peaks$pathway
+  score = clonal_peaks$log1p_score
 )
 
 gr_tissue_peaks = GRanges(
   seqnames = crc_peaks_top_fch$seqnames,
   ranges = IRanges(start = crc_peaks_top_fch$start, end = crc_peaks_top_fch$end)
-  # score = clonal_peaks$pathway
 )
 
-# gr_chaning_peaks = GRanges(
-#   seqnames = changing_peaks$seqnames,
-#   ranges = IRanges(start = changing_peaks$start, end = changing_peaks$end)
-#   # score = clonal_peaks$pathway
-# )
 
 overlaps_tissue_clonal <- findOverlaps(query = gr_clonal_peaks,subject = gr_tissue_peaks,minoverlap = 100)
 # overlaps_tissue_changing <- findOverlaps(query = gr_chaning_peaks,subject = gr_tissue_peaks,minoverlap = 100)
 overlaped_peaks_clonal <-  clonal_peaks[(queryHits(overlaps_tissue_clonal)),]
-to_remove_tissue <- c(subjectHits(overlaps_tissue_clonal),subjectHits(overlaps_tissue_changing)) %>% unique()
+to_remove_tissue <- c(subjectHits(overlaps_tissue_clonal)) %>% unique()
 overlaped_peaks_tissue <-  crc_peaks_top_fch[to_remove_tissue,]
 
 filtered_tissue_peaks <- crc_peaks_top_fch %>% 
@@ -66,18 +58,10 @@ fixed_peaks <-filtered_tissue_peaks %>%
   dplyr::rename(chr=seqnames)
 
 
-pathways_epigenetic_classes = readRDS('input_data_P05/a_scores_scaled_per_group.rds')
-pathways_long <- pathways_epigenetic_classes %>%
-  as.data.frame() %>%
-  rownames_to_column("pathway") %>%
-  pivot_longer(
-    cols = -pathway,
-    names_to = "class",
-    values_to = "score"
-  )
 epigenetic_peaks <- clonal_peaks %>% 
-  left_join(pathways_long,relationship = 'many-to-many') %>% 
-  select(peak,seqnames,start,end,class,score,pathway) %>%
+  dplyr::rename(score=log1p_score,
+                class=consensus_cluster) %>% 
+  select(peak,seqnames,start,end,class,score,gene) %>%
   dplyr::rename(chr=seqnames) %>% 
   mutate(mutant=case_when(class%in%c(1,3)~"A",
                           TRUE~"B")) %>% 
@@ -85,34 +69,26 @@ epigenetic_peaks <- clonal_peaks %>%
                             class==3~"-",
                             class==2~"+",
                             class==4~"-",
-                          TRUE~NA)) %>% 
+                            TRUE~NA)) %>% 
   mutate(type='clonal') %>% 
   select(!class)
 
 epigenetic_states <- c("A+","A-","B+","B-")
-fixed_peaks_all <- lapply(epigenetic_states, function(epi){
-  fixed_peaks %>% 
-    mutate(mutant=strsplit(epi, "")[[1]][1],
-           epistate=strsplit(epi, "")[[1]][2]) %>% 
-    mutate(pathway='CRC_TISSUE')
-}) %>% bind_rows()
 
 
-# fluctuating_peaks <- changing_peaks %>% 
-#   select(peak,seqnames,start,end) %>% 
-#   dplyr::rename(chr=seqnames) %>% 
-#   mutate(type='fluctuating',
-#          mutant=NA,
-#          epistate=NA,
-#          score=0.1)
-  
-# p05_peaks <- do.call('rbind',list(fixed_peaks,fluctuating_peaks,epigenetic_peaks))
-p05_peaks <- do.call('rbind',list(fixed_peaks_all,epigenetic_peaks))
 
-activity_df <- p05_peaks %>% 
-  group_by(mutant,epistate,pathway) %>% 
-  summarise(a_score=mean(score))
+p05_peaks <- epigenetic_peaks
+sampled_genes = p05_peaks %>% 
+  pull(gene) %>% unique() %>%  sample(size = 100)
+p05_peaks_sampled = p05_peaks %>% 
+  filter(gene%in%c(sampled_genes,"MYC"))
 
+activity_df <- p05_peaks_sampled %>% 
+  dplyr::rename(a_score=score) %>% 
+  dplyr::select(a_score,gene,mutant,epistate) %>% 
+  distinct()
+
+#### create the activity list expected by ProCESS
 mutants <- activity_df$mutant %>% unique()
 epistates <- activity_df$epistate %>% unique()
 
@@ -124,24 +100,24 @@ for (mut in mutants){
       filter(mutant==mut,
              epistate==epi) 
     pathways_vect <- pathways_state$a_score
-    names(pathways_vect) <- pathways_state$pathway
+    names(pathways_vect) <- pathways_state$gene
     mutant_activity_list[[epi]]<-pathways_vect
   }
   activity_list[[mut]]<-mutant_activity_list
 }
-saveRDS(object = activity_list,file = 'input_data_P05/activity_list.rds')
+saveRDS(object = activity_list,file = '../data/activity_list_gene_level_log1pscore.rds')
 
-p05_peaks <- p05_peaks %>% 
-  select(peak,pathway) %>% 
+
+
+# p05_peaks <- p05_peaks %>% 
+#   select(peak,gene) %>% 
+#   distinct()
+
+
+p05_peaks_sampled <- p05_peaks_sampled %>% 
+  select(peak,gene) %>% 
   distinct()
-saveRDS(object = p05_peaks,file = 'input_data_P05/all_peaks_df.rds')
-p05_peaks %>% pull(peak) %>% unique() %>% length()
 
-p05_peaks %>% 
-  select(peak,type) %>% 
-  distinct() %>% 
-  ggplot(aes(x=type,fill=type)) +
-  geom_bar()+
-  # scale_fill_manual(values=mutant_cols)+
-  theme_minimal()+
-  ggtitle(label = "Peak distribution per class")
+
+saveRDS(object = p05_peaks_sampled,file = '../data/all_peaks_gene_df.rds')
+

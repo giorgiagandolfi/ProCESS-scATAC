@@ -32,8 +32,8 @@ cell_idx <- as.numeric(args[1])
 
 
 selected_frags_dist_len = readRDS("chr1_selected_frags_dist_len.rds")
-df_peak_final = readRDS("input_data_P05/df_peak_final_big_new_sparse_filtered.rds")
-df_peak_cna_final = readRDS("input_data_P05/df_peak_final_big_new_filtered.rds")
+df_peak_final = readRDS("input_data_P05/df_peak_final_big_new_sparse_085_filtered.rds")
+df_peak_cna_final = readRDS("input_data_P05/df_peak_cna_final_big_new_085_filtered.rds")
 
 
 df_peak_final <- df_peak_final %>% 
@@ -127,7 +127,7 @@ background_frg=simulate_background_fragments(background_regions = cell_bg_region
 
 message("Background fragments generated")
 ### get cell info into peaks
-outidr <- "fragments_cells_big_with_background_01_lambda_sparsity_070_filtered_peaks/"
+outidr <- "fragments_cells_big_with_background_01_lambda_sparsity_085_filtered_peaks_tss/"
 
 dir.create(path = outidr)
 chromosomes_frags <- chromosomes_frags %>% inner_join(cell_info)

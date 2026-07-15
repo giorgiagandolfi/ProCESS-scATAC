@@ -587,3 +587,34 @@ convert_activity_list<-function(activity_list){
   return(activity_df)
 }
 
+
+# library(dplyr)
+# library(GenomeInfoDb)
+# library(BSgenome.Hsapiens.UCSC.hg38)
+# 
+# # chromosome lengths
+# realtive_to_absolute <- function(df,genome){
+#   if (genome=='hg38'){
+#     seqlens <- seqlengths(BSgenome.Hsapiens.UCSC.hg38)
+#     
+#     # cumulative offsets
+#     offsets <- cumsum(c(0, seqlens[names(seqlens) != "chrY"][-length(seqlens[names(seqlens) != "chrY"])]))
+#     
+#     chr_offsets <- data.frame(
+#       chrom = names(offsets),
+#       offset = offsets
+#     )
+#     
+#     # your data
+#     seg <- df
+#     
+#     # convert
+#     seg_abs <- seg %>%
+#       left_join(chr_offsets, by = "chrom") %>%
+#       mutate(
+#         abs_start = start + offset,
+#         abs_end   = end + offset
+#       )
+#   }
+#   return(seg_abs)
+# }

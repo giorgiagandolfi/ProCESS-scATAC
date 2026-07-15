@@ -67,9 +67,9 @@ met_obj$cell_type <- cell_type_vector
 
 # Primary tumour
 
-barcodes_primary <- readLines("CM618C1-S1-barcodes.tsv")
-peaks_primary <- read.table("CM618C1-S1-peaks.bed", sep = "\t")
-counts_primary  <- Matrix::readMM("CM618C1-S1-matrix.mtx")
+barcodes_primary <- readLines("level_3/CM618C1-S1-barcodes.tsv")
+peaks_primary <- read.table("level_3/CM618C1-S1-peaks.bed", sep = "\t")
+counts_primary  <- Matrix::readMM("level_3/CM618C1-S1-matrix.mtx")
 peaks_primary_gr <- GRanges(
   seqnames = peaks_primary$V1,
   ranges = IRanges(start = peaks_primary$V2, end = peaks_primary$V3)
@@ -79,9 +79,9 @@ colnames(counts_primary) <- barcodes_primary
 rownames(counts_primary) <- peaknames_primary
 
 
-fragpath_primary <- 'CM618C1-S1-fragments.tsv.gz'
+fragpath_primary <- 'level_3/CM618C1-S1-fragments.tsv.gz'
 
-rds_primary <- readRDS("CRC_CM618C2-S1Y2.rds")
+rds_primary <- readRDS("level_4/CRC_CM618C2-S1Y2.rds")
 metadata_primary <- rds_primary@meta.data
 
 chrom_assay_primary <- CreateChromatinAssay(

@@ -1,14 +1,16 @@
 # rm(list=ls())
 library(ProCESS)
 library(dplyr)
-library(ggplot2)
+# library(ggplot2)
 library(tidyverse)
-library(ComplexHeatmap)
-library(circlize)
-library(data.table)
-source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/scripts/plot_muller.R")
-setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/")
-source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/utils.R")
+# library(ComplexHeatmap)
+# library(circlize)
+# library(data.table)
+#source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/scripts/plot_muller.R")
+#setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/")
+#source("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/ProCESS-scATAC/scripts/simulate_fragments/peak_based/utils.R")
+source("utils.R")
+
 sample_forest <- load_sample_forest("sample_forest_atac_epigenome.sff")
 phylo_forest <- load_phylogenetic_forest("phylo_forest_atac_epigenetic.sff")
 
@@ -35,7 +37,7 @@ clone_peaks<- rep(x = "clonal",total_simulated_peaks*0.5)
 
 # df_peak_types <- data.frame(peak_id=paste0("peak_",seq_along(1:total_simulated_peaks)),
 #                             type=c(fixed_peaks,changing_peaks)) 
-crc_peaks<- readRDS("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC/crc_peaks.rds")
+crc_peaks<- readRDS("crc_peaks.rds")
 df_peak_types <- crc_peaks %>% head(100) %>% 
   mutate(type=c(fixed_peaks,changing_peaks,clone_peaks))
 df_peak_types <- df_peak_types %>% 
@@ -296,8 +298,9 @@ df_peak_cna_final <- df_peak_cna_final %>% dplyr::select(cell_id,label.peak_id,l
   dplyr::rename(peak_id=label.peak_id) %>% 
   dplyr::rename(tot_cn=label.tot_cn) %>% 
   dplyr::select(cell_id,peak_id,tot_cn)
-
-
+cell_info <- sample_forest$get_nodes()
+saveRDS(object = df_peak_cna_final,file = "df_peak_cna_final.rds")
+saveRDS(object = cell_info,file = "cell_info.rds")
 
 frag_res_all_cells <- lapply(df_peak_final$cell_id %>% unique(), function(c){
   peak_cell <- df_peak_final %>% filter(cell_id==c) %>% 
@@ -319,7 +322,7 @@ frag_res_all_cells <- lapply(df_peak_final$cell_id %>% unique(), function(c){
 
 
 
-cell_info <- sample_forest$get_nodes()
+
 frag_res_all_cells <- frag_res_all_cells %>% inner_join(cell_info)
 colnames(df_final) <- gsub("label.", "", colnames(df_final))
 frag_res_all_cells<- frag_res_all_cells %>% 
