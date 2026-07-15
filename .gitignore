@@ -12,3 +12,10 @@
 **.fastq
 **.narrowPeak
 **.sif
+**.nextflow*
+**__MACOSX/
+**analysis_bg
+**bowtie2
+**simulated_data
+**GRCh38
+**.txt.gz
