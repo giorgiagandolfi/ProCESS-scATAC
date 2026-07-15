@@ -19,3 +19,7 @@
 **simulated_data
 **GRCh38
 **.txt.gz
+**data/
+GRCh38-Closest-Genes-PC.tsv
+**my_singularity_image
+scripts/simulate_fragments/peak_based/input_data_P05/data
