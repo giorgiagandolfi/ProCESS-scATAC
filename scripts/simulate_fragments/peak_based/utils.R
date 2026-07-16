@@ -527,7 +527,7 @@ get_epigenetic_activity<- function(activity,mutant,clone){
 
 
 
-add_sparsity<- function(real_df,dropout_rate=0.7){
+add_sparsity_all<- function(real_df,dropout_rate=0.7){
   N_obs <- nrow(real_df)
   N_real_zeros <- real_df %>%
     filter(status == 0) %>%
@@ -564,6 +564,43 @@ add_sparsity<- function(real_df,dropout_rate=0.7){
   return(df_dropout)
 }
 
+rtrunc_weibull <- function(n, shape=84, scale=0.85, lower = 0, upper = 0.97) {
+  x <- numeric(n)
+  i <- 1
+  
+  while (i <= n) {
+    y <- rweibull(n - i + 1, shape = shape, scale = scale)
+    y <- y[y >= lower & y <= upper]
+    if (length(y) > 0) {
+      k <- min(length(y), n - i + 1)
+      x[i:(i + k - 1)] <- y[1:k]
+      i <- i + k
+    }
+  }
+  
+  x
+}
+
+add_sparsity_per_cell <- function(real_df,weibull_scale=0.9){
+  
+  cells = unique(real_df$cell_id)
+  cell_sparsity <- tibble(
+    cell_id = cells,
+    sparsity = rtrunc_weibull(length(cells), scale = weibull_scale)
+  )
+  
+  real_df_after <- real_df %>%
+    dplyr::left_join(cell_sparsity, by = "cell_id") %>%
+    dplyr::mutate(
+      status = if_else(
+        status == 1,
+        rbinom(n(), 1, 1 - sparsity),
+        status
+      )
+    ) %>%
+    dplyr::select(-sparsity)
+  return(real_df_after)
+}
 
 library(dplyr)
 library(purrr)
