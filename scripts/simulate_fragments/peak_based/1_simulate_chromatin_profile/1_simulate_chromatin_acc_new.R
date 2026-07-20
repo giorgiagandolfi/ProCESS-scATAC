@@ -63,8 +63,8 @@ phylo_forest <- load_phylogenetic_forest(phylo_forest_file)
 
 activity <- readRDS(activity_list_file)
 peaks <-  readRDS(peak_df_file) %>% 
-  # dplyr::rename(process=pathway)
-  dplyr::rename(process=gene)
+  dplyr::rename(process=pathway)
+  # dplyr::rename(process=gene)
 
 cna_data_sim <- phylo_forest$get_cell_allelic_fragmentation()
 cna_data_sim = cna_data_sim %>% 
@@ -207,7 +207,7 @@ df_peak_cna_final <- df_peak_cna_final %>%
   dplyr::rename(peak=label.peak) %>%
   dplyr::rename(tot_cn=label.tot_cn) #%>%
   # dplyr::select(cell_id,peak,tot_cn)
-cell_info <- sample_forest$get_nodes()
+cell_info <- phylo_forest$get_nodes()
 
 # df_peak_final_dropout <- add_sparsity(real_df = df_peak_final,dropout_rate = 0.85)
 # saveRDS(object = df_peak_final_dropout,file = "input_data_P05/df_peak_final_big_new_sparse_085_filtered.rds")
