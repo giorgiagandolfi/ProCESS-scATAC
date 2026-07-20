@@ -624,6 +624,108 @@ convert_activity_list<-function(activity_list){
   return(activity_df)
 }
 
+sample_fragments_for_peak_vec_allele <- function(
+    peak_id,
+    peak_chr,
+    peak_from,
+    peak_to,
+    flank = 100,
+    lambda = 0.2,
+    fragment_len_dist = NULL,
+    available_alleles,
+    max_fragments = 50,
+    cell_id
+) {
+
+  n <- length(peak_id)
+
+  stopifnot(
+    length(peak_from) == n,
+    length(peak_to) == n
+  )
+
+  peak_size <- peak_to - peak_from
+  max_total <- peak_size + 2 * flank
+
+  # vectorized fragment count sampling
+  n_frag_vec <- rztpois(n = n,lambda = lambda)
+
+  n_frag_vec <- pmin(n_frag_vec, max_fragments)
+
+  results <- vector("list", n)
+
+  for (k in seq_len(n)) {
+    n_frag <- n_frag_vec[k]
+
+    if (n_frag == 0 || length(available_alleles) == 0) {
+      next
+    }
+
+    allele_results <- list()
+
+    for (allele in as.character(available_alleles)) {
+
+      # sample all fragment sizes simultaneously
+      if (!is.null(fragment_len_dist)) {
+
+        sizes <- sample(
+          fragment_len_dist,
+          size = n_frag,
+          replace = TRUE
+        )
+
+      } else {
+
+        sizes <- sample_fragment_size(n_frag)
+
+      }
+
+      # sample all gaps simultaneously
+      gaps <- numeric(n_frag)
+
+      if (n_frag > 1) {
+        gaps[2:n_frag] <- sample_gap_size(n_frag - 1)
+      }
+
+      # cumulative occupied space
+      occupied <- cumsum(sizes + gaps)
+
+      keep <- occupied <= max_total[k]
+
+      if (!any(keep)) {
+        next
+      }
+
+      sizes <- sizes[keep]
+      gaps  <- gaps[keep]
+      print(peak_id[k])
+      print(gaps)
+      print(sizes)
+      # vectorized fragment placement
+      peaks_frags_df <- place_fragments_in_peak(fragments_sizes = sizes,
+                                                gaps_sizes = gaps,
+                                                peak_id = peak_id[k],peak_from = peak_from[k],
+                                                peak_to = peak_to[k],sd_peak_center=100)
+
+      allele_results[[allele]] <- peaks_frags_df %>% mutate(fragment_allele=allele) %>%
+        mutate(peak_id = peak_id[k],
+               peak_chr=peak_chr,
+               peak_from = peak_from[k],
+               peak_to = peak_to[k],
+               fragment_size = sizes,
+               cell_id=cell_id,
+               fragment_chr=peak_chr
+        ) %>%
+        dplyr::rename(fragment_start=from,
+                      fragment_end=to)
+
+    }
+
+    results[[k]] <- do.call("rbind",allele_results)
+  }
+
+  do.call("rbind",results)
+}
 
 # library(dplyr)
 # library(GenomeInfoDb)
