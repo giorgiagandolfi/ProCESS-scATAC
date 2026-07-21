@@ -520,8 +520,8 @@ simulate_background_fragments <- function(
   
   bind_rows(fragments)
 }
-get_epigenetic_activity<- function(activity,mutant,clone){
-  programs <- activity[[mutant]][[clone]]
+get_epigenetic_activity<- function(activity,epistate){
+  programs <- activity[[epistate]]
   return(programs)
 }
 
