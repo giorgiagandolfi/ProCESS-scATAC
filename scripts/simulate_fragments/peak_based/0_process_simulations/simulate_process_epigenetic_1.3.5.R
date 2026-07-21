@@ -31,7 +31,7 @@ generate_shades <- function(color, n = 9) {
 
 # set the seed of the random number generator for repeatability
 set.seed(0)
-mutant_cols <- c(
+mutant_cols_epi <- c(
   "0[E1]" = generate_shades("darkorange", 4)[1],
   "0[E2]" = generate_shades("darkorange", 4)[2],
   "0[E3]" = generate_shades("darkorange", 4)[3],
@@ -221,8 +221,7 @@ sim$mutate_progeny(sim$choose_border_cell_in("C"),"D")
 sim$set_rates(list("B" = list(duplication = 0.1, death = .5)))
 sim$set_rates(list("C" = list(duplication = 0.1, death = .5)))
 sim$run_up_to_time(100)
-plot_tissue(sim,color_map = mutant_cols)
-# plot_muller(sim,color_map = mutant_cols)
+
 
 
 # genetic_clades_prop
@@ -257,18 +256,23 @@ n_w <- n_h <- 25
 ncells <- 0.8 * n_w * n_h
 bbox <- sim$search_sample(c("D" = ncells), n_w, n_h)
 sim$sample_cells("S_D", bbox$lower_corner, bbox$upper_corner)
-plot_tissue(sim,at_sample = "S_D")
+
+p_tissue=plot_tissue(sim,color_map = mutant_cols_epi)
+ggsave(filename = "plot_tissue_final.png",plot = p_tissue)
+# plot_muller(sim,color_map = mutant_cols)
+
 
 sample_forest <- sim$get_sample_forest()
 
 
 
 
-# sampled_genetic_prop= sample_forest$get_nodes() %>% 
-#   filter(!is.na(sample)) %>% 
-#   group_by(mutant) %>% 
-#   summarise(n=n())  %>% 
-#   mutate(pct_cells_sim=n/sum(n))
+sampled_genetic_prop= sample_forest$get_nodes() %>%
+  filter(!is.na(sample)) %>%
+  group_by(mutant) %>%
+  summarise(n=n())  %>%
+  mutate(pct_cells_sim=n/sum(n))
+saveRDS(object = sampled_genetic_prop,file = "sampled_genetic_prop.rds")
 # 
 # sampled_genetic_prop%>% 
 #   ggplot(aes(x = "", y = n, fill = mutant)) +
@@ -293,8 +297,6 @@ sample_forest <- sim$get_sample_forest()
 #   labs(x="Simulted data",y="Ground truth")
 # 
 # # plot it
-plot_forest(sample_forest,color_map = mutant_cols) %>%
-  annotate_forest(sample_forest)
 
 # sample_forest_old=load_sample_forest("sample_forest_atac_epigenome_new_version_chloe_data.sff")
 # plot_forest(sample_forest_old,color_map = mutant_cols) %>% 
@@ -367,20 +369,20 @@ m_engine$add_mutant(mutant_name = "0",
                                            "E2" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E3" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E4" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA)),
-                    drivers = list(list("APC R1450*", allele = 1),CNA_Clone0_1,CNA_Clone0_2,CNA_Clone0_3))
+                    drivers = list("APC Q1294Gfs*6","TP53 R175H",CNA_Clone0_1,CNA_Clone0_2,CNA_Clone0_3))
 m_engine$add_mutant(mutant_name = "A",
                     passenger_rates = list("E1" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E2" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E3" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E4" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA)),
-                    drivers = list(CNA_CloneA))
+                    drivers = list("KRAS Q22K",CNA_CloneA))
 
 m_engine$add_mutant(mutant_name = "B",
                     passenger_rates = list("E1" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E2" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E3" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
                                            "E4" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA)),
-                    drivers = list(CNA_CloneB_1,CNA_CloneB_2,CNA_CloneB_3,CNA_CloneB_4,CNA_CloneB_5,CNA_CloneB_6,CNA_CloneB_7,CNA_CloneB_8))
+                    drivers = list("GNAS R844H",CNA_CloneB_1,CNA_CloneB_2,CNA_CloneB_3,CNA_CloneB_4,CNA_CloneB_5,CNA_CloneB_6,CNA_CloneB_7,CNA_CloneB_8))
 
 m_engine$add_mutant(mutant_name = "C",
                     passenger_rates = list("E1" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
@@ -399,6 +401,12 @@ m_engine$add_mutant(mutant_name = "D",
 m_engine$add_exposure(time = 0,coefficients = c(SBS1 = 0.15,SBS5 = 0.40,
                                                 SBS18 = 0.15,SBS17b = 0.20,ID1 = 0.40,ID2 = 0.40,ID18=0.2,SBS88 = 0.10))
 phylo_forest <- m_engine$place_mutations(sample_forest, num_of_preneoplatic_SNVs=800, num_of_preneoplatic_indels=200)
+plot_forest(phylo_forest,color_map = mutant_cols) %>%
+  annotate_forest(phylo_forest,drivers = F,add_driver_label = F)
+
+plot_forest(phylo_forest,color_map = mutant_cols_epi) %>%
+  annotate_forest(phylo_forest,drivers = F,add_driver_label = F)
+
 phylo_forest$save("../phylo_forest_atac_epigenome_1.3.5_pat05.sff")
 
 
