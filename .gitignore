@@ -10,6 +10,8 @@
 **.arrow
 **.bam
 **.fastq
+**.fasta
+**.txt
 **.narrowPeak
 **.sif
 **.nextflow*
