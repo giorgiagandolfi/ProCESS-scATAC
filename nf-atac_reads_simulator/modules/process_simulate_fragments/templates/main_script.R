@@ -120,7 +120,7 @@ frag_len_out_peak = final_mapping %>%
   pull(fragment_len)
 frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
 background_frg=simulate_background_fragments(background_regions = cell_bg_regions,
-                                             lambda_per_kb = 0.1,frag_len_out_peak_dens = frag_len_out_peak_dens)
+                                             lambda_per_kb = 0.05,frag_len_out_peak_dens = frag_len_out_peak_dens)
 background_frg = background_frg %>%
   dplyr::mutate(fragment_type='background') %>% 
   dplyr::mutate(fragment_allele=0)

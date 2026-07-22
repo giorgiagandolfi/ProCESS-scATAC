@@ -532,7 +532,7 @@ simulate_background_fragments <- function(
   
   # 1. simulate fragment counts per chromosome
   chr_sizes <- chr_sizes %>%
-    mutate(
+    dplyr::mutate(
       lambda = lambda_per_kb * total_bp / 10000,
       n_frag = rpois(n(), lambda)
     )
@@ -549,11 +549,11 @@ simulate_background_fragments <- function(
     
     # background intervals for this chromosome
     chr_bg <- bg %>%
-      filter(bg_chr == chr) %>% 
-      mutate(bg_start_100bb=bg_start-100,
+      dplyr::filter(bg_chr == chr) %>% 
+      dplyr::mutate(bg_start_100bb=bg_start-100,
              bg_end_100bb=bg_end+100) %>% 
-      mutate(bg_width_flank=bg_end_100bb-bg_start_100bb) %>% 
-      filter(bg_width_flank>0)
+      dplyr::mutate(bg_width_flank=bg_end_100bb-bg_start_100bb) %>% 
+      dplyr::filter(bg_width_flank>0)
     
     # probability proportional to interval width
     idx <- sample(
@@ -612,8 +612,8 @@ get_background_regions <- function(
 
   
   peak_region_df <- peak_fragments_df %>%
-    group_by(peak) %>%
-    summarise(
+    dplyr::group_by(peak) %>%
+    dplyr::summarise(
       start=min(fragment_start),
       end=max(fragment_end),
       chr=paste0("chr", unique(fragment_chr)),
