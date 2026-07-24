@@ -72,13 +72,14 @@ node_tour <- get_node_tour(phylo_forest, only_leaves = T,with_genomes = T)
 
 node <- phylo_forest\$get_node(as.numeric(cell_id))
 cell_peaks <- peak_access_labelling(node)
+saveRDS(object = cell_peaks,file = paste0('cell_',cell_id,'_peak_accessibility.rds'))
 genome <- node\$get_genome()
 simulated_frags_list <- list()
 
 
 fasta_cell <- file(paste0("cell_",cell_id,".fasta"), open = "w")
 
-cell_peaks <- add_sparsity_per_cell(cell_peaks,weibull_scale = 0.85)
+# cell_peaks <- add_sparsity_per_cell(cell_peaks,weibull_scale = 0.85)
 for (cp in 1:nrow(cell_peaks)){
   if (cell_peaks\$status[cp]==1){
     cell_alleles = genome\$get_alleles_covering_ref_region(cell_peaks\$chr[cp],
@@ -105,7 +106,7 @@ write.table(x = simulated_frags_df,file = "peaks_fragment_mapping.txt",append = 
 
 
 chrom_sizes_file = read.table(file.path(reference_dir,'reference.fasta.chi'))
-chrom_sizes_file = chrom_sizes_file %>% select(V1,V3)
+chrom_sizes_file = chrom_sizes_file %>% dplyr::select(V1,V3)
 
 
 cell_bg_regions <- get_background_regions(peak_fragments_df = simulated_frags_df,
@@ -120,7 +121,9 @@ frag_len_out_peak = final_mapping %>%
   pull(fragment_len)
 frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
 background_frg=simulate_background_fragments(background_regions = cell_bg_regions,
-                                             lambda_per_kb = 0.05,frag_len_out_peak_dens = frag_len_out_peak_dens)
+                                             mean_pct_fragments_out = 0.4,
+                                             tot_fragments_in_peak = nrow(simulated_frags_df),
+                                             frag_len_out_peak_dens = frag_len_out_peak_dens)
 background_frg = background_frg %>%
   dplyr::mutate(fragment_type='background') %>% 
   dplyr::mutate(fragment_allele=0)

@@ -21,7 +21,8 @@ process PROCESS_SIMULATE_FRAGMENT {
     path(fragm_len_dist_out)
     
     output:
-    tuple val(meta), path("*.rds"), emit: all_fragments_rds
+    tuple val(meta), path("*_peak_accessibility.rds"), emit: peak_accessibility_rds
+    tuple val(meta), path("fragments_cell_id_*"), emit: all_fragments_rds
     tuple val(meta), path("*.fasta")                   , emit: all_fragments_fasta
     tuple val(meta), path("*.txt")                   , emit: peak_fragment_mapping
     

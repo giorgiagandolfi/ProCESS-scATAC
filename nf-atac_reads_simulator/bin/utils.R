@@ -512,92 +512,142 @@ complement_intervals <- function(blocked, chr_length){
   )
 }
 
+# simulate_background_fragments <- function(
+#     background_regions,
+#     lambda_per_kb = 0.01,
+#     frag_len_out_peak_dens
+# ) {
+#   
+#   # Convert to dataframe
+#   standard_chromosomes <- paste0('chr',seq_along(1:22))
+#   bg <- background_regions %>% 
+#     filter(bg_chr%in%standard_chromosomes)
+#   
+#   
+#   
+#   # total background size per chromosome
+#   chr_sizes <- bg %>%
+#     group_by(bg_chr) %>%
+#     summarise(total_bp = sum(bg_width))
+#   
+#   # 1. simulate fragment counts per chromosome
+#   chr_sizes <- chr_sizes %>%
+#     dplyr::mutate(
+#       lambda = lambda_per_kb * total_bp / 10000,
+#       n_frag = rpois(n(), lambda)
+#     )
+#   
+#   fragments <- list()
+#   
+#   for (i in seq_len(nrow(chr_sizes))) {
+#     
+#     chr <- chr_sizes$bg_chr[i]
+#     n <- chr_sizes$n_frag[i]
+#     
+#     if (n == 0)
+#       next
+#     
+#     # background intervals for this chromosome
+#     chr_bg <- bg %>%
+#       dplyr::filter(bg_chr == chr) %>% 
+#       dplyr::mutate(bg_start_100bb=bg_start-100,
+#              bg_end_100bb=bg_end+100) %>% 
+#       dplyr::mutate(bg_width_flank=bg_end_100bb-bg_start_100bb) %>% 
+#       dplyr::filter(bg_width_flank>0)
+#     
+#     # probability proportional to interval width
+#     idx <- sample(
+#       seq_len(nrow(chr_bg)),
+#       size = n,
+#       replace = TRUE,
+#       prob = chr_bg$bg_width_flank
+#     )
+#     
+#     # sample a position within each selected interval
+#     starts <- chr_bg$bg_start_100bb[idx] + sample.int(
+#       max(chr_bg$bg_width_flank),
+#       n,
+#       replace = TRUE
+#     ) %% chr_bg$bg_width_flank[idx]
+#     
+#     # 3. sample fragment 
+#     frag_sampler <- function(my_frag_leng_dist,n) {
+#       sample(
+#         my_frag_leng_dist$x,
+#         size = n,
+#         replace = TRUE,
+#         prob = my_frag_leng_dist$y
+#       )
+#     }
+#     frag_size <- frag_sampler(my_frag_leng_dist=frag_len_out_peak_dens,n)
+#     frag_size <- as.integer(round(frag_size))
+#     ends <- starts + frag_size - 1
+#     
+#     
+#     # remove fragments crossing background interval boundary
+#     # valid <- ends <= chr_bg$bg_end
+#     
+#     fragments[[i]] <- data.frame(
+#       fragment = paste0("bg_frag_", seq_len(n)),
+#       fragment_chr = str_remove(chr,pattern = "chr"),
+#       fragment_start = starts,
+#       fragment_end = ends,
+#       fragment_size = frag_size
+#     )
+#   }
+#   
+#   bind_rows(fragments)
+# }
+
+
 simulate_background_fragments <- function(
     background_regions,
-    lambda_per_kb = 0.01,
+    mean_pct_fragments_out,
+    tot_fragments_in_peak,
     frag_len_out_peak_dens
 ) {
+  
+  
+  pct_out_peak_fragments = rnorm(n = 1,mean = mean_pct_fragments_out,sd = 0.1)
+  tot_frags_out <- round(tot_fragments_in_peak *  pct_out_peak_fragments / (1-pct_out_peak_fragments),0)
+  
+  
   
   # Convert to dataframe
   standard_chromosomes <- paste0('chr',seq_along(1:22))
   bg <- background_regions %>% 
-    filter(bg_chr%in%standard_chromosomes)
+    dplyr::filter(bg_chr%in%standard_chromosomes) %>% 
+    dplyr::mutate(bg_start_offset=round(bg_start-100),0) %>% 
+    dplyr::mutate(bg_end_offset=round(bg_end+100)) %>% 
+    dplyr::mutate(bg_withd_offset=bg_end_offset-bg_start_offset)
   
+  bg_bed <- data.table(bg)
   
+  # Randomly sample bed file rows, proportional to the length of each range
+  simulated.sites <- bg_bed[sample(.N, size=tot_frags_out, replace=TRUE, prob=bg_bed$bg_withd_offset)]
   
-  # total background size per chromosome
-  chr_sizes <- bg %>%
-    group_by(bg_chr) %>%
-    summarise(total_bp = sum(bg_width))
-  
-  # 1. simulate fragment counts per chromosome
-  chr_sizes <- chr_sizes %>%
-    dplyr::mutate(
-      lambda = lambda_per_kb * total_bp / 10000,
-      n_frag = rpois(n(), lambda)
-    )
-  
-  fragments <- list()
-  
-  for (i in seq_len(nrow(chr_sizes))) {
-    
-    chr <- chr_sizes$bg_chr[i]
-    n <- chr_sizes$n_frag[i]
-    
-    if (n == 0)
-      next
-    
-    # background intervals for this chromosome
-    chr_bg <- bg %>%
-      dplyr::filter(bg_chr == chr) %>% 
-      dplyr::mutate(bg_start_100bb=bg_start-100,
-             bg_end_100bb=bg_end+100) %>% 
-      dplyr::mutate(bg_width_flank=bg_end_100bb-bg_start_100bb) %>% 
-      dplyr::filter(bg_width_flank>0)
-    
-    # probability proportional to interval width
-    idx <- sample(
-      seq_len(nrow(chr_bg)),
+  # Randomly sample uniformly within each chosen range
+  simulated.sites[, fragment_start := sample(bg_start_offset:bg_end_offset, size=1), by=1:dim(simulated.sites)[1]]
+  bg=as.data.frame(simulated.sites)
+  frag_sampler <- function(my_frag_leng_dist,n) {
+    sample(
+      my_frag_leng_dist$x,
       size = n,
       replace = TRUE,
-      prob = chr_bg$bg_width_flank
-    )
-    
-    # sample a position within each selected interval
-    starts <- chr_bg$bg_start_100bb[idx] + sample.int(
-      max(chr_bg$bg_width_flank),
-      n,
-      replace = TRUE
-    ) %% chr_bg$bg_width_flank[idx]
-    
-    # 3. sample fragment 
-    frag_sampler <- function(my_frag_leng_dist,n) {
-      sample(
-        my_frag_leng_dist$x,
-        size = n,
-        replace = TRUE,
-        prob = my_frag_leng_dist$y
-      )
-    }
-    frag_size <- frag_sampler(my_frag_leng_dist=frag_len_out_peak_dens,n)
-    frag_size <- as.integer(round(frag_size))
-    ends <- starts + frag_size - 1
-    
-    
-    # remove fragments crossing background interval boundary
-    # valid <- ends <= chr_bg$bg_end
-    
-    fragments[[i]] <- data.frame(
-      fragment = paste0("bg_frag_", seq_len(n)),
-      fragment_chr = str_remove(chr,pattern = "chr"),
-      fragment_start = starts,
-      fragment_end = ends,
-      fragment_size = frag_size
-    )
+      prob = my_frag_leng_dist$y
+    ) %>% round(0)
   }
   
-  bind_rows(fragments)
+  
+  bg <- bg %>% 
+    dplyr::mutate(fragment_size=frag_sampler(my_frag_leng_dist=frag_len_out_peak_dens,n=nrow(simulated.sites))) %>% 
+    dplyr::mutate(fragment_end=fragment_start+fragment_size-1) %>% 
+    dplyr::mutate(fragment=paste0("bg_frag_", seq_len(nrow(simulated.sites)))) %>% 
+    dplyr::rename(fragment_chr=bg_chr) %>% 
+    dplyr::select(starts_with("fragment"))
+  return(bg)
 }
+
 
 
 get_background_regions <- function(
@@ -708,8 +758,8 @@ get_background_regions <- function(
     chr_length <- chrom_sizes$length[chrom_sizes$chr==chr]
     
     chr_blocked <- blocked %>%
-      filter(chr==!!chr) %>%
-      select(start,end)
+      dplyr::filter(chr==!!chr) %>%
+      dplyr::select(start,end)
     
     if(nrow(chr_blocked)>0){
       
@@ -733,14 +783,14 @@ get_background_regions <- function(
   }
   
   bg <- bind_rows(background_list) %>%
-    mutate(
+    dplyr::mutate(
       width=end-start+1
     ) %>%
-    filter(
+    dplyr::filter(
       chr %in% paste0("chr",1:22),
       width>=filter_small_than
     ) %>%
-    select(
+    dplyr::select(
       bg_chr=chr,
       bg_start=start,
       bg_end=end,
@@ -845,8 +895,8 @@ convert_activity_list<-function(activity_list){
       
       tibble(
         mutant = cell_name,
-        epistate = sign_name,
-        pathway = names(sign_values),
+        pathway = sign_name,
+        # pathway = names(sign_values),
         activity = as.numeric(sign_values)
       )
       
