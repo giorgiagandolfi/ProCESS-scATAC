@@ -17,6 +17,7 @@ include { SAMTOOLS_MERGE }           from "./modules/bam_merge/main.nf"
 include { SINTO_FRAGMENTS }          from "./modules/call_fragments/main.nf"
 include { SORT_FRAGMENTS }           from "./modules/sort_fragments/main.nf"
 include { CALL_PEAKS }               from "./modules/call_peaks/main.nf"
+include { BENCHMARK_PEAKS }               from "./modules/benchmark_peaks/main.nf"
 
 workflow {
 
@@ -107,4 +108,18 @@ workflow {
     SORT_FRAGMENTS(SINTO_FRAGMENTS.out.frag_bed)
 
     CALL_PEAKS(SAMTOOLS_MERGE.out.merged_bam)
+    
+    // Group per-cell RDS files by sample_id
+    ch_cell_rds_grouped = PROCESS_SIMULATE_FRAGMENT.out.peak_accessibility_rds
+        .map { meta, rds ->
+                def group_meta = [sample_id: meta.sample_id]
+                [group_meta, rds]
+            }
+            .groupTuple()
+    ch_aggregate_input = CALL_PEAKS.out.peak
+        .join(ch_cell_rds_grouped)
+
+    // Shape: [ [sample_id: X], peaks_file, [rds1, rds2, ...] ]
+    ch_aggregate_input.view()
+    BENCHMARK_PEAKS(ch_aggregate_input)
 }

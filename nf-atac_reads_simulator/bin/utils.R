@@ -608,7 +608,7 @@ simulate_background_fragments <- function(
 ) {
   
   
-  pct_out_peak_fragments = rnorm(n = 1,mean = mean_pct_fragments_out,sd = 0.1)
+  pct_out_peak_fragments = rnorm(n = 1,mean = mean_pct_fragments_out,sd = 0.05)
   tot_frags_out <- round(tot_fragments_in_peak *  pct_out_peak_fragments / (1-pct_out_peak_fragments),0)
   
   
@@ -1004,6 +1004,8 @@ sample_fragments_for_peak_vec_allele <- function(
     }
 
     results[[k]] <- do.call("rbind",allele_results)
+    # results_pre_sparsity <- do.call("rbind",allele_results)
+    
   }
 
   do.call("rbind",results)

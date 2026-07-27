@@ -47,6 +47,7 @@ peak_access_labelling <- function(node) {
   cell_mutant <- node\$mutant_name
   cell_epistate <- node\$epistate_name
   clone_programs <-get_epigenetic_activity(activity = activity,epistate=cell_epistate)
+  clone_programs=sort(clone_programs)
   cell_activity_peaks <- list()
   for (p in names(clone_programs)){
     
@@ -62,10 +63,11 @@ peak_access_labelling <- function(node) {
         mutant = cell_mutant,
         epistate = cell_epistate
       )
+    message(paste0("Processing pathway: ",p))
     
-    cell_active_peaks <- do.call("rbind",cell_activity_peaks)
-    return(cell_active_peaks)
   }
+  cell_active_peaks <- do.call("rbind",cell_activity_peaks)
+  return(cell_active_peaks)
 }
 
 node_tour <- get_node_tour(phylo_forest, only_leaves = T,with_genomes = T)
@@ -80,6 +82,7 @@ simulated_frags_list <- list()
 fasta_cell <- file(paste0("cell_",cell_id,".fasta"), open = "w")
 
 # cell_peaks <- add_sparsity_per_cell(cell_peaks,weibull_scale = 0.85)
+cell_peaks <- 
 for (cp in 1:nrow(cell_peaks)){
   if (cell_peaks\$status[cp]==1){
     cell_alleles = genome\$get_alleles_covering_ref_region(cell_peaks\$chr[cp],
@@ -121,7 +124,7 @@ frag_len_out_peak = final_mapping %>%
   pull(fragment_len)
 frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
 background_frg=simulate_background_fragments(background_regions = cell_bg_regions,
-                                             mean_pct_fragments_out = 0.4,
+                                             mean_pct_fragments_out = 0.3,
                                              tot_fragments_in_peak = nrow(simulated_frags_df),
                                              frag_len_out_peak_dens = frag_len_out_peak_dens)
 background_frg = background_frg %>%
@@ -136,33 +139,44 @@ all_fragments = all_fragments %>%
   dplyr::mutate(fragment_allele=as.numeric(fragment_allele),
                 fragment_start=as.numeric(fragment_start),
                 fragment_size=as.numeric(fragment_size))
+
+p_dropout = 0.8
+all_fragments\$sequenced <- rbinom(
+  n = nrow(all_fragments),
+  size = 1,
+  prob = 1-p_dropout)
 saveRDS(object = all_fragments,file = paste0('fragments_cell_id_',cell_id,".rds"))
-n_fragments <- nrow(all_fragments)
+
+n_fragments_to_sequence <- all_fragments %>% 
+  dplyr::filter(sequenced==1) %>% 
+  nrow()
+fragments_to_seq <- all_fragments %>% 
+  dplyr::filter(sequenced==1)
 
 pb <- cli_progress_bar(
   "Processing fragments",
-  total = n_fragments,
+  total = n_fragments_to_sequence,
   format = "Processing fragments {cli::pb_bar} {cli::pb_percent} ({cli::pb_current}/{cli::pb_total})"
 )
-for (f in seq_len(n_fragments)){
+for (f in seq_len(n_fragments_to_sequence)){
   if (all_fragments\$fragment_type[f]=='background'){
-    cell_alleles_backgound = genome\$get_alleles_covering_ref_region(all_fragments\$fragment_chr[f],
-                                                                     all_fragments\$fragment_start[f],
-                                                                     all_fragments \$fragment_size[f])
+    cell_alleles_backgound = genome\$get_alleles_covering_ref_region(fragments_to_seq\$fragment_chr[f],
+                                                                     fragments_to_seq\$fragment_start[f],
+                                                                     fragments_to_seq\$fragment_size[f])
     random_selected_allele <- sample(x = cell_alleles_backgound,size = 1)
-    fragment_region <- genome\$get_region_aligned_to_ref(all_fragments\$fragment_chr[f],
+    fragment_region <- genome\$get_region_aligned_to_ref(fragments_to_seq\$fragment_chr[f],
                                                          random_selected_allele %>% as.numeric(),
-                                                         all_fragments\$fragment_start[f],
-                                                         all_fragments\$fragment_size[f])
+                                                         fragments_to_seq\$fragment_start[f],
+                                                         fragments_to_seq\$fragment_size[f])
     fragment = genome\$get_fragment(fragment_region\$chr,
                                     fragment_region\$allele,
                                     fragment_region\$from,
                                     fragment_region\$length)
   } else {
-    fragment_region <- genome\$get_region_aligned_to_ref(all_fragments\$fragment_chr[f],
-                                                         all_fragments\$fragment_allele[f],
-                                                         all_fragments\$fragment_start[f],
-                                                         all_fragments\$fragment_size[f])
+    fragment_region <- genome\$get_region_aligned_to_ref(fragments_to_seq\$fragment_chr[f],
+                                                         fragments_to_seq\$fragment_allele[f],
+                                                         fragments_to_seq\$fragment_start[f],
+                                                         fragments_to_seq\$fragment_size[f])
     
     fragment = genome\$get_fragment(fragment_region\$chr,
                                     fragment_region\$allele,
