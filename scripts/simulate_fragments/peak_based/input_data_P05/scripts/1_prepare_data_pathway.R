@@ -17,7 +17,25 @@ genes_hallmark <- data.frame(
   gene = unlist(genes_hallmark_list, use.names = FALSE)
 )
 
+genes_involvement = genes_hallmark %>% dplyr::group_by(gene) %>% dplyr::summarise(n_pathways=dplyr::n())
 
+pathways <- names(genes_hallmark_list)
+overlap_matrix <- matrix(
+  0,
+  nrow = length(pathways),
+  ncol = length(pathways),
+  dimnames = list(pathways, pathways)
+)
+
+for (x in pathways){
+  for (y in pathways){
+    common_genes <-length(
+      intersect(genes_hallmark_list[[x]], genes_hallmark_list[[y]])
+    )
+    overlap_matrix[x, y] <- common_genes/length(genes_hallmark_list[[x]])
+  }
+}
+Heatmap(matrix = overlap_matrix,col = colorRampPalette(c("white", "darkgreen"))(10),cluster_columns = F,cluster_rows = F)
 
 
 
@@ -37,7 +55,13 @@ epigenetic_scores = cell_scores %>%
   dplyr::mutate(
     mean_score_01_norm = (mean_score - min(mean_score)) /
       (max(mean_score) - min(mean_score))
-  )
+  ) %>% 
+  dplyr::mutate(
+    mean_score_01_nor_offset = 0.05 + 
+      ((mean_score - min(mean_score)) /
+         (max(mean_score) - min(mean_score))) * 0.95
+  ) %>% 
+  dplyr::mutate(mean_score_logist=plogis(mean_score))
 
 
 
@@ -90,19 +114,16 @@ epigenetic_scores =epigenetic_scores %>%
   mutate(class=case_when(is.na(class)~"other",
                          TRUE~class))
 
-top_pathways =epigenetic_scores %>% 
-  filter(sd_score>1)  %>% 
-  pull(pathway) %>% unique()
+# top_pathways =epigenetic_scores %>% 
+#   filter(sd_score>1)  %>% 
+#   pull(pathway) %>% unique()
 
-
-final_data_filtered = final_data %>% 
-  filter(pathway%in%top_pathways)
 
 epigenetic_cluster_cols = c(
-  "1" = "#ABB6FE",
-  "2" = "#465efdff",
-  "3" = "#0117a7ff",
-  "4" ="#9402eeff"
+  "1" = "olivedrab",
+  "2" = "forestgreen",
+  "3" = "darkgreen",
+  "4" ="palegreen1"
 )
 
 mat_zcore <- epigenetic_scores %>%
@@ -148,18 +169,37 @@ mat_01core_ht=Heatmap(
   top_annotation = col_annot,col = colorRampPalette(c("white", "darkgreen"))(10)
 )
 
-draw(mat_zcore_ht+mat_01core_ht,heatmap_legend_side = "bottom",annotation_legend_side = "bottom",
-     merge_legends = T)
 
+mat_logit <- epigenetic_scores %>%
+  select(consensus_cluster, pathway, mean_score_logist) %>%
+  pivot_wider(names_from = consensus_cluster, values_from = mean_score_logist) %>% 
+  column_to_rownames(var = 'pathway') %>% 
+  as.matrix()
+
+mat_logit_ht=Heatmap(
+  mat_logit,
+  name = "01 Score",
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  cluster_rows = TRUE,
+  cluster_columns = T,
+  top_annotation = col_annot,col = colorRampPalette(c("white", "darkgreen"))(10)
+)
+
+pdf("merged_zscore_and_rescaled_heatmaps.pdf",width = 20,height = 15)
+draw(mat_zcore_ht+mat_01core_ht+mat_logit_ht,heatmap_legend_side = "bottom",annotation_legend_side = "bottom",
+     merge_legends = T)
+dev.off()
 activity_df=epigenetic_scores %>%
-  select(consensus_cluster, pathway, mean_score_01_norm) %>% 
+  select(consensus_cluster, pathway, mean_score_logist) %>% 
   mutate(epistate=case_when(consensus_cluster==1~"E1",
                             consensus_cluster==3~"E3",
                             consensus_cluster==2~"E2",
                             consensus_cluster==4~"E4",
                             TRUE~NA)) %>% 
-  dplyr::rename(a_score=mean_score_01_norm) %>% 
+  dplyr::rename(a_score=mean_score_logist) %>% 
   dplyr::select(pathway,a_score,epistate)
+
 
 epistates <- activity_df$epistate %>% unique()
 
@@ -179,15 +219,65 @@ saveRDS(object = activity_list,file = 'input_data_P05/data/final_version/a_score
 
 
 peaks = readRDS("/data/rds/DMP/UCEC/GENEVOD/ccolson/MECCA/AllCells/ArchRProjects/HIPEC_P05_AllCells/PeakCalls/Type/Tumour-reproduciblePeaks.gr.rds")%>% as.data.frame()
-peaks_df = peaks %>% 
+selected_peaks = peaks %>% 
+  filter(distToTSS<=1000) %>% ### do not know if to use the score or the distance from the gene start
+  # select(seqnames,start,end,nearestGene,peakType) %>% 
+  dplyr::rename(gene=nearestGene)
+
+unique_sim_peaks = peaks_df %>% pull(peak) %>% unique() %>% length()
+
+# peaks_df %>% 
+#   group_by(peak) %>% 
+#   mutate(n_involved_pathways=n()) %>% 
+#   mutate(n_involved_pathways = case_when(
+#     n_involved_pathways >= 7 ~ ">=7",
+#     TRUE ~ as.character(n_involved_pathways)
+#   )) %>% 
+#   group_by(n_involved_pathways) %>% 
+#   summarise(pct=n()/unique_sim_peaks) %>% 
+#   ggplot(aes(x = "", y = pct, fill = as.factor(n_involved_pathways))) +
+#   geom_col(width = 1) +
+#   coord_polar(theta = "y") +
+#   theme_void() +
+#   scale_fill_brewer(palette = 'Dark2')+
+#   labs(fill = "Involved pathways")+
+#   theme(legend.position = "bottom")
+
+
+peaks_df_gene_filtered = peaks %>% 
   filter(distToTSS<=1000) %>% ### do not know if to use the score or the distance from the gene start
   # select(seqnames,start,end,nearestGene,peakType) %>% 
   dplyr::rename(gene=nearestGene) %>% 
   dplyr::left_join(genes_hallmark,relationship = "many-to-many") %>% 
-  filter(!is.na(pathway)) %>% 
-  mutate(peak=paste(seqnames,start,end,sep='-')) %>% 
-  select(peak,pathway) %>% 
+  dplyr::filter(!is.na(pathway)) %>% 
+  dplyr::mutate(peak=paste(seqnames,start,end,sep='-')) %>% 
+  left_join(y = genes_involvement) %>% 
+  left_join(activity_df,relationship = "many-to-many") %>% 
+  dplyr::select(peak,gene,pathway,a_score,n_pathways,epistate)
+  
+  
+peaks_df_gene_common = peaks_df_gene_filtered %>% 
+  dplyr::filter(n_pathways>1) %>% 
+  dplyr::group_by(pathway,gene) %>% 
+  dplyr::summarise(mean_ascore=mean(a_score),
+                   sd_ascore=sd(a_score)) %>% 
+  group_by(gene) %>% 
+  slice_max(order_by = sd_ascore,n = 1) %>% 
+  inner_join(y = selected_peaks) %>% 
+  dplyr::mutate(peak=paste(seqnames,start,end,sep='-')) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::select(peak,pathway)
+
+peaks_df_gene_single = peaks_df_gene_filtered %>% 
+  dplyr::filter(n_pathways==1) %>% 
+  dplyr::select(peak,pathway,gene) %>% 
+  distinct() %>% 
+  left_join(y = selected_peaks,relationship = "many-to-many") %>% 
+  dplyr::mutate(peak=paste(seqnames,start,end,sep='-')) %>% 
+  dplyr::select(peak,pathway) %>% 
   distinct()
+
+peaks_df = rbind(peaks_df_gene_single,peaks_df_gene_common)
 
 pathways = peaks_df$pathway %>% unique()
 peak_pathway_list = list()
@@ -195,6 +285,7 @@ for (pat in pathways){
   peak_pathway_list[[pat]] <- peaks_df %>% 
     filter(pathway==pat) %>% 
     separate(peak,into = c("chr","from","to"),sep = "-",remove = F,convert = T) %>% 
+    mutate(peak_lenght=to-from) %>% 
     mutate(chr = str_remove(chr, "chr"))
 }
-saveRDS(object = peak_pathway_list,file = 'input_data_P05/data/final_version/peak_pathway_list.rds')
+saveRDS(object = peak_pathway_list,file = 'input_data_P05/data/final_version/peak_pathway_list_unique_peaks.rds')
