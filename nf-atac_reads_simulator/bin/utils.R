@@ -645,6 +645,7 @@ simulate_background_fragments <- function(
     dplyr::mutate(fragment=paste0("bg_frag_", seq_len(nrow(simulated.sites)))) %>% 
     dplyr::rename(fragment_chr=bg_chr) %>% 
     dplyr::select(starts_with("fragment"))
+  bg$fragment_chr <- gsub(pattern = 'chr',replacement = '',x=bg$fragment_chr )
   return(bg)
 }
 
@@ -798,7 +799,6 @@ get_background_regions <- function(
     )
   
   bg$bg_strand <- "*"
-  
   bg
 }
 
@@ -1041,3 +1041,176 @@ sample_fragments_for_peak_vec_allele <- function(
 #   }
 #   return(seg_abs)
 # }
+
+
+evaluate_peaks <- function(truth, called, min_overlap = 1) {
+  truth_gr <- GRanges(
+    seqnames = truth$chrom,
+    ranges = IRanges(start = truth$start, end = truth$end))
+  
+  called_gr <- GRanges(
+    seqnames = called$chrom,
+    ranges = IRanges(start = called$start, end = called$end)
+  )
+  
+  hits <- findOverlaps(
+    called_gr,
+    truth_gr,
+    minoverlap = min_overlap
+  )
+  colnames(truth)<- paste0('simulated_',colnames(truth))
+  colnames(called)<- paste0('inferred_',colnames(called))
+  
+  matched <- data.frame(
+    truth_idx  = subjectHits(hits),
+    called_idx = queryHits(hits)
+  )
+  
+  matched <- cbind(
+    truth[matched$truth_idx, ],
+    called[matched$called_idx, ]
+  )
+  
+  TP_called <- n_distinct(matched$inferred_name)
+  TP_truth  <- n_distinct(matched$simulated_peak_id)
+  
+  # Peak-level TP count
+  TP <- TP_called
+  
+  # Total peaks
+  N_called <- nrow(called)
+  N_truth  <- nrow(truth)
+  
+  
+  # False positives and false negatives
+  FP <- N_called - TP_called
+  FN <- N_truth - TP_truth
+  
+  # Metrics
+  precision <- TP / (TP + FP)
+  recall    <- TP / (TP + FN)
+  
+  f1 <- ifelse(
+    precision + recall == 0,
+    0,
+    2 * precision * recall / (precision + recall)
+  )
+  
+  peak_metrics <- data.frame(
+    TP = TP,
+    FP = FP,
+    FN = FN,
+    Precision = precision,
+    Recall = recall,
+    F1 = f1
+  )
+  
+  return(list('peak_matching_df'=matched,'metrics'=peak_metrics))
+ 
+}
+
+
+evaluate_peaks_new <- function(truth, called, min_overlap = 1) {
+  
+  truth_gr <- GRanges(
+    seqnames = truth$chrom,
+    ranges = IRanges(start = truth$start, end = truth$end)
+  )
+  
+  called_gr <- GRanges(
+    seqnames = called$chrom,
+    ranges = IRanges(start = called$start, end = called$end)
+  )
+  
+  hits <- findOverlaps(
+    called_gr,
+    truth_gr,
+    minoverlap = min_overlap
+  )
+  
+  colnames(truth)  <- paste0("simulated_", colnames(truth))
+  colnames(called) <- paste0("inferred_", colnames(called))
+  
+  ## -------------------------
+  ## True positives (matches)
+  ## -------------------------
+  matched_idx <- data.frame(
+    truth_idx  = subjectHits(hits),
+    called_idx = queryHits(hits)
+  )
+  
+  tp_df <- cbind(
+    truth[matched_idx$truth_idx, , drop = FALSE],
+    called[matched_idx$called_idx, , drop = FALSE]
+  )
+  tp_df$status <- "TP"
+  
+  ## -------------------------
+  ## False negatives
+  ## -------------------------
+  fn_idx <- setdiff(seq_len(nrow(truth)), unique(subjectHits(hits)))
+  
+  fn_df <- truth[fn_idx, , drop = FALSE]
+  fn_df$status <- "FN"
+  
+  ## -------------------------
+  ## False positives
+  ## -------------------------
+  fp_idx <- setdiff(seq_len(nrow(called)), unique(queryHits(hits)))
+  
+  fp_df <- called[fp_idx, , drop = FALSE]
+  fp_df$status <- "FP"
+  
+  ## Make dataframes compatible for rbind()
+  all_cols <- union(colnames(tp_df), union(colnames(fn_df), colnames(fp_df)))
+  
+  add_missing <- function(df, cols) {
+    miss <- setdiff(cols, colnames(df))
+    df[miss] <- NA
+    df[, cols, drop = FALSE]
+  }
+  
+  tp_df <- add_missing(tp_df, all_cols)
+  fn_df <- add_missing(fn_df, all_cols)
+  fp_df <- add_missing(fp_df, all_cols)
+  
+  final_df <- rbind(tp_df, fn_df, fp_df)
+  
+  ## -------------------------
+  ## Metrics
+  ## -------------------------
+  TP_called <- dplyr::n_distinct(tp_df$inferred_name)
+  TP_truth  <- dplyr::n_distinct(tp_df$simulated_peak_id)
+  
+  TP <- TP_called
+  
+  N_called <- nrow(called)
+  N_truth  <- nrow(truth)
+  
+  FP <- N_called - TP_called
+  FN <- N_truth - TP_truth
+  
+  precision <- ifelse(TP + FP == 0, 0, TP / (TP + FP))
+  recall    <- ifelse(TP + FN == 0, 0, TP / (TP + FN))
+  
+  f1 <- ifelse(
+    precision + recall == 0,
+    0,
+    2 * precision * recall / (precision + recall)
+  )
+  
+  peak_metrics <- data.frame(
+    TP = TP,
+    FP = FP,
+    FN = FN,
+    Precision = precision,
+    Recall = recall,
+    F1 = f1
+  )
+  
+  return(list(
+    peak_matching_df = tp_df,
+    peak_classification_df = final_df,
+    metrics = peak_metrics
+  ))
+}

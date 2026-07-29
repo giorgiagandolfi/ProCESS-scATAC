@@ -121,5 +121,5 @@ workflow {
 
     // Shape: [ [sample_id: X], peaks_file, [rds1, rds2, ...] ]
     ch_aggregate_input.view()
-    BENCHMARK_PEAKS(ch_aggregate_input)
+    //BENCHMARK_PEAKS(ch_aggregate_input)
 }

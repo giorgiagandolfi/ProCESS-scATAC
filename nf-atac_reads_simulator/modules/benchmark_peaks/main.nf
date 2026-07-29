@@ -1,5 +1,5 @@
 process BENCHMARK_PEAKS {
-    tag "$meta.id"
+    tag "$meta.sample_id"
     label 'process_medium'
     label "error_ignore"
 
@@ -32,8 +32,7 @@ process BENCHMARK_PEAKS {
     #cell_files <- list.files(path = ".", pattern = "fragments_cell_id_.*", full.names = TRUE)
     x <- "${cell_rds_files}"
     files <- strsplit(x, " ")[[1]]
-    peak_accessibility_list <- lapply(files, readRDS)
-    #cell_data <- lapply(cell_files, readRDS)
+    peak_accessibility_list <- lapply(files, readRDS) %>% bind_rows()
 
     # --- Your analysis logic here ---
 

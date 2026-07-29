@@ -124,7 +124,7 @@ frag_len_out_peak = final_mapping %>%
   pull(fragment_len)
 frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
 background_frg=simulate_background_fragments(background_regions = cell_bg_regions,
-                                             mean_pct_fragments_out = 0.3,
+                                             mean_pct_fragments_out = 0.4, #0.4,
                                              tot_fragments_in_peak = nrow(simulated_frags_df),
                                              frag_len_out_peak_dens = frag_len_out_peak_dens)
 background_frg = background_frg %>%
@@ -140,7 +140,7 @@ all_fragments = all_fragments %>%
                 fragment_start=as.numeric(fragment_start),
                 fragment_size=as.numeric(fragment_size))
 
-p_dropout = 0.8
+p_dropout = 0.9
 all_fragments\$sequenced <- rbinom(
   n = nrow(all_fragments),
   size = 1,
@@ -159,7 +159,7 @@ pb <- cli_progress_bar(
   format = "Processing fragments {cli::pb_bar} {cli::pb_percent} ({cli::pb_current}/{cli::pb_total})"
 )
 for (f in seq_len(n_fragments_to_sequence)){
-  if (all_fragments\$fragment_type[f]=='background'){
+  if (fragments_to_seq\$fragment_type[f]=='background'){
     cell_alleles_backgound = genome\$get_alleles_covering_ref_region(fragments_to_seq\$fragment_chr[f],
                                                                      fragments_to_seq\$fragment_start[f],
                                                                      fragments_to_seq\$fragment_size[f])
@@ -185,7 +185,7 @@ for (f in seq_len(n_fragments_to_sequence)){
   }
 
   fragment_seq = fragment\$sequence
-  fragment_id = paste0(">",cell_id,":",fragment_region\$chr,":", fragment_region\$from,":",fragment_region\$allele)
+  fragment_id = paste0(">",cell_id,":",fragment_region\$chr,":", fragment_region\$from,":",fragment_region\$allele,":",fragments_to_seq\$fragment_type[f])
   writeLines(fragment_id, fasta_cell)
   writeLines(fragment_seq, fasta_cell)
   cli_progress_update()
