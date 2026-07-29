@@ -105,7 +105,7 @@ for (cp in 1:nrow(cell_peaks)){
   }
 }
 simulated_frags_df = do.call("rbind",simulated_frags_list)
-write.table(x = simulated_frags_df,file = paste0("cell_",cell_id,"_peaks_fragment_mapping.txt",append = F,quote = F,sep = '\t')
+write.table(x = simulated_frags_df,file = paste0("cell_",cell_id,"_peaks_fragment_mapping.txt",append = F,quote = F,sep = '\t'))
 
 
 chrom_sizes_file = read.table(file.path(reference_dir,'reference.fasta.chi'))
