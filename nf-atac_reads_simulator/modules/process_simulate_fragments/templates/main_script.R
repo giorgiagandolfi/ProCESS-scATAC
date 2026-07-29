@@ -82,7 +82,7 @@ simulated_frags_list <- list()
 fasta_cell <- file(paste0("cell_",cell_id,".fasta"), open = "w")
 
 # cell_peaks <- add_sparsity_per_cell(cell_peaks,weibull_scale = 0.85)
-cell_peaks <- 
+
 for (cp in 1:nrow(cell_peaks)){
   if (cell_peaks\$status[cp]==1){
     cell_alleles = genome\$get_alleles_covering_ref_region(cell_peaks\$chr[cp],
@@ -124,7 +124,7 @@ frag_len_out_peak = final_mapping %>%
   pull(fragment_len)
 frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
 background_frg=simulate_background_fragments(background_regions = cell_bg_regions,
-                                             mean_pct_fragments_out = 0.4, #0.4,
+                                             mean_pct_fragments_out = 0.8, #0.4,
                                              tot_fragments_in_peak = nrow(simulated_frags_df),
                                              frag_len_out_peak_dens = frag_len_out_peak_dens)
 background_frg = background_frg %>%
