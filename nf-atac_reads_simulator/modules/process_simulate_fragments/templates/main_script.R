@@ -122,9 +122,9 @@ final_mapping <- readRDS(fragm_len_dist_out)
 frag_len_out_peak = final_mapping %>% 
   filter(region_type=='out peak') %>% 
   pull(fragment_len)
-frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
+#frag_len_out_peak_dens <- density(frag_len_out_peak,from=100)
 background_frg=simulate_background_fragments(background_regions = cell_bg_regions,
-                                             mean_pct_fragments_out = 0.8, #0.4,
+                                             mean_pct_fragments_out = 0.4,
                                              tot_fragments_in_peak = nrow(simulated_frags_df),
                                              frag_len_out_peak_dens = frag_len_out_peak_dens)
 background_frg = background_frg %>%

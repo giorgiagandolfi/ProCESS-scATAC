@@ -12,31 +12,41 @@ colnames(called_peaks) <- c(
   "chrom", "start", "end", "name", "score",
   "strand", "signalValue", "pValue", "qValue", "peak"
 )
-# All per-cell RDS files (grouped by sample_id, staged as a list)
-#cell_files <- list.files(path = ".", pattern = "fragments_cell_id_.*", full.names = TRUE)
-x <- "${cell_rds_files}"
-files <- strsplit(x, " ")[[1]]
-peak_accessibility_list <- lapply(files, readRDS) %>% bind_rows()
 
-compare_res = evaluate_peaks(truth = truth_peaks,called = called_peaks,min_overlap = 10)
-compare_res = evaluate_peaks_new(truth = truth_peaks,called = called_peaks,min_overlap = 10)
+frags_peak_mapping_files <- strsplit("${cell_peak_txt_files}", " ")[[1]]
+simulated_frags_files <- strsplit("${cell_frags_rds_files}", " ")[[1]]
 
-all_peaks_classification <- compare_res\$peak_classification_df
-all_peaks_classification <- all_peaks_classification %>% 
-  dplyr::mutate(peak_bulk_cell_class=case_when(simulated_pct_cells>=0.8~'high bulk',
-                                        simulated_pct_cells<0.8 & simulated_pct_cells>+0.4~'medium bulk',
-                                        TRUE~'low bulk'))
+sequenced_peaks_list<-list()
+for (i in seq_len(simulated_frags_files)){
+  peak_frags_pre_noise = read.table(frags_peak_mapping_files[i])
+  peak_frags_pre_noise = peak_frags_pre_noise %>% 
+    dplyr::mutate(fragment_start=round(fragment_start,0)) %>% 
+    dplyr::mutate(fragment_end=round(fragment_end,0))
+  sequenced_frags = readRDS(simulated_frags_files[i])
+  sequenced_frags = sequenced_frags %>% 
+    plyr::mutate(fragment_start=round(fragment_start,0)) %>% 
+    dplyr::mutate(fragment_end=round(fragment_end,0))
+  sequenced_frags = sequenced_frags %>% 
+    filter(sequenced==1) %>% 
+    filter(fragment_type=='peak') %>% 
+    inner_join(peak_frags_pre_noise,by=c('fragment_start','fragment_end','fragment_allele','fragment_chr'))
+  
+  sequenced_peaks_list[[i]] = sequenced_frags %>% 
+    select(peak, peak_chr,peak_from,peak_to,cell_id)
+  print(i)
+}
 
-all_peaks_classification %>% 
-  dplyr::group_by(peak_bulk_cell_class,status) %>% 
-  dplyr::summarise(n=dplyr::n())
+sequenced_peaks_df <- do.call('rbind',sequenced_peaks_list)
+tot_cells = length(frags_peak_mapping_files)
+sequenced_peaks_df=sequenced_peaks_df %>% 
+  group_by(peak) %>%
+  dplyr::mutate(pct_cells=n()/tot_cells) %>% 
+  dplyr::select(!cell_id) %>% 
+  dplyr::distinct()
 
-matching_df=compare_res\$peak_matching_df
-matching_df <-matching_df %>% 
-  dplyr::mutate(base_difference_start=(simulated_start-inferred_start)) %>% 
-  dplyr::mutate(base_difference_end=(simulated_end-inferred_end)) %>% 
-  dplyr::mutate(abs_diff=abs(base_difference_end)+abs(base_difference_start))
 
-abs_diff_plt=matching_df %>% 
-  ggplot(aes(y=abs_diff,x=""))+geom_boxplot(outliers = F)+
-  theme_minimal()
+truth=sequenced_peaks_df
+called=called_peaks
+min_overlap=10
+results = evaluate_peaks_new(truth,called,min_overlap)
+saveRDS(object = results,file = paste0("${meta.sample_id}","_metrics.rds"))

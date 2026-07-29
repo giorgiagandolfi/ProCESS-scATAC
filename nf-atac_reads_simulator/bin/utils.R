@@ -640,7 +640,8 @@ simulate_background_fragments <- function(
   
   
   bg <- bg %>% 
-    dplyr::mutate(fragment_size=frag_sampler(my_frag_leng_dist=frag_len_out_peak_dens,n=nrow(simulated.sites))) %>% 
+    dplyr::mutate(fragment_size=sample(frag_len_out_peak_dens,size = nrow(simulated.sites),replace = TRUE)) %>% 
+    # dplyr::mutate(fragment_size=frag_sampler(my_frag_leng_dist=frag_len_out_peak_dens,n=nrow(simulated.sites))) %>% 
     dplyr::mutate(fragment_end=fragment_start+fragment_size-1) %>% 
     dplyr::mutate(fragment=paste0("bg_frag_", seq_len(nrow(simulated.sites)))) %>% 
     dplyr::rename(fragment_chr=bg_chr) %>% 
@@ -1110,11 +1111,12 @@ evaluate_peaks <- function(truth, called, min_overlap = 1) {
 }
 
 
-evaluate_peaks_new <- function(truth, called, min_overlap = 1) {
+evaluate_peaks_new <- function(truth, called, min_overlap = 10) {
   
   truth_gr <- GRanges(
-    seqnames = truth$chrom,
-    ranges = IRanges(start = truth$start, end = truth$end)
+    seqnames = truth$peak_chr,
+    ranges = IRanges(start = truth$peak_from, end = truth$peak_to),
+    pct_cells = truth$pct_cells,
   )
   
   called_gr <- GRanges(
@@ -1130,10 +1132,7 @@ evaluate_peaks_new <- function(truth, called, min_overlap = 1) {
   
   colnames(truth)  <- paste0("simulated_", colnames(truth))
   colnames(called) <- paste0("inferred_", colnames(called))
-  
-  ## -------------------------
-  ## True positives (matches)
-  ## -------------------------
+
   matched_idx <- data.frame(
     truth_idx  = subjectHits(hits),
     called_idx = queryHits(hits)
@@ -1144,18 +1143,12 @@ evaluate_peaks_new <- function(truth, called, min_overlap = 1) {
     called[matched_idx$called_idx, , drop = FALSE]
   )
   tp_df$status <- "TP"
-  
-  ## -------------------------
-  ## False negatives
-  ## -------------------------
+
   fn_idx <- setdiff(seq_len(nrow(truth)), unique(subjectHits(hits)))
   
   fn_df <- truth[fn_idx, , drop = FALSE]
   fn_df$status <- "FN"
-  
-  ## -------------------------
-  ## False positives
-  ## -------------------------
+
   fp_idx <- setdiff(seq_len(nrow(called)), unique(queryHits(hits)))
   
   fp_df <- called[fp_idx, , drop = FALSE]
@@ -1176,11 +1169,9 @@ evaluate_peaks_new <- function(truth, called, min_overlap = 1) {
   
   final_df <- rbind(tp_df, fn_df, fp_df)
   
-  ## -------------------------
   ## Metrics
-  ## -------------------------
   TP_called <- dplyr::n_distinct(tp_df$inferred_name)
-  TP_truth  <- dplyr::n_distinct(tp_df$simulated_peak_id)
+  TP_truth  <- dplyr::n_distinct(tp_df$simulated_peak)
   
   TP <- TP_called
   
@@ -1211,6 +1202,7 @@ evaluate_peaks_new <- function(truth, called, min_overlap = 1) {
   return(list(
     peak_matching_df = tp_df,
     peak_classification_df = final_df,
-    metrics = peak_metrics
+    metrics = peak_metrics,
+    min_overlap = min_overlap
   ))
 }

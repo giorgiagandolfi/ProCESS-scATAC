@@ -110,16 +110,23 @@ workflow {
     CALL_PEAKS(SAMTOOLS_MERGE.out.merged_bam)
     
     // Group per-cell RDS files by sample_id
-    ch_cell_rds_grouped = PROCESS_SIMULATE_FRAGMENT.out.peak_accessibility_rds
+    ch_frags_rds_grouped = PROCESS_SIMULATE_FRAGMENT.out.all_fragments_rds
+        .map { meta, rds ->
+                def group_meta = [sample_id: meta.sample_id]
+                [group_meta, rds]
+            }
+            .groupTuple()
+    ch_peaks_txt_grouped = PROCESS_SIMULATE_FRAGMENT.out.peak_fragment_mapping
         .map { meta, rds ->
                 def group_meta = [sample_id: meta.sample_id]
                 [group_meta, rds]
             }
             .groupTuple()
     ch_aggregate_input = CALL_PEAKS.out.peak
-        .join(ch_cell_rds_grouped)
+        .join(ch_peaks_txt_grouped)
+        .join(ch_frags_rds_grouped)
 
     // Shape: [ [sample_id: X], peaks_file, [rds1, rds2, ...] ]
     ch_aggregate_input.view()
-    //BENCHMARK_PEAKS(ch_aggregate_input)
+    BENCHMARK_PEAKS(ch_aggregate_input)
 }
