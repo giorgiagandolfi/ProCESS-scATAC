@@ -138,7 +138,7 @@ sampled_cells <- phylo_forest$get_nodes() %>%
 
 start <- Sys.time()
 
-mclapply(sampled_cells, function(cell_id) {
+mclapply(sampled_cells[1:2], function(cell_id) {
   
   fasta_file <- paste0("cell_", cell_id, ".fasta")
   rds_file <- paste0("frags_cell_", cell_id, ".rds")
@@ -151,6 +151,9 @@ mclapply(sampled_cells, function(cell_id) {
   
   node <- phylo_forest$get_node(cell_id)
   cell_peaks <- peak_access_labelling(node)
+  saveRDS(object = cell_peaks,paste0("cell_all_peaks_", cell_id, ".rds"))
+  ### add sprasity to the data
+  cell_peaks <- add_sparsity_per_cell(cell_peaks,weibull_scale = 0.85)
   genome <- node$get_genome()
   
   simulated_frags_list <- list()
