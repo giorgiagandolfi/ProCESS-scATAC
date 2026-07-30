@@ -53,22 +53,23 @@ pathway_map_df <- enframe(hallmark_map, "class", "pathway") %>%
 
 mat_all <- df_peak_final %>% 
   # filter(label.process%in%c('HALLMARK_APOPTOSIS','HALLMARK_MYC_TARGETS_V1')) %>% 
-  mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
-  select(cell_id,peak_id_complete,status) %>% 
-  mutate(status=as.numeric(status)) %>% 
+  dplyr::mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
+  dplyr::select(cell_id,peak_id_complete,status) %>% 
+  dplyr::mutate(status=as.numeric(status)) %>% 
   pivot_wider(
     names_from = peak_id_complete,
     values_from = status,
     values_fill = 0
   )
 mat_all <- as.matrix(mat_all[, -1])
-rownames(mat_all) <- df_peak_final |> distinct(cell_id) |> pull(cell_id)
+rownames(mat_all) <- df_peak_final |> dplyr::distinct(cell_id) |> dplyr::pull(cell_id)
 
+df_peak_final_dropout <- add_sparsity_per_cell(real_df = df_peak_final,weibull_scale = 0.9)
 mat_all_sparse <- df_peak_final_dropout %>% 
   # filter(label.process%in%c('HALLMARK_APOPTOSIS','HALLMARK_MYC_TARGETS_V1')) %>% 
-  mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
-  select(cell_id,peak_id_complete,status) %>% 
-  mutate(status=as.numeric(status)) %>% 
+  dplyr::mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
+  dplyr::select(cell_id,peak_id_complete,status) %>% 
+  dplyr::mutate(status=as.numeric(status)) %>% 
   pivot_wider(
     names_from = peak_id_complete,
     values_from = status,
@@ -102,23 +103,23 @@ pathway_class_cols <- c(
 )
 row_ann_df <- df_peak_final %>% 
   # filter(label.process%in%c('HALLMARK_APOPTOSIS','HALLMARK_MYC_TARGETS_V1')) %>% 
-  mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
-  mutate(geno_epi=paste0(label.mutant,label.epistate)) %>% 
-  select(cell_id,geno_epi) %>% 
-  distinct()
+  dplyr::mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
+  dplyr::mutate(geno_epi=paste0(label.mutant,label.epistate)) %>% 
+  dplyr::select(cell_id,geno_epi) %>% 
+  dplyr::distinct()
 
 row_ann_df <- row_ann_df[match(rownames(mat), row_ann_df$cell_id), ]
 row_ann <- rowAnnotation(epistate=row_ann_df$geno_epi,col=list(epistate=mutant_cols))
 
 col_ann_df <- df_peak_final %>% 
   # filter(label.process%in%c('HALLMARK_APOPTOSIS','HALLMARK_MYC_TARGETS_V1')) %>% 
-  mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
-  mutate(geno_epi=paste0(label.mutant,label.epistate)) %>% 
-  select(peak_id_complete,label.process) %>% 
+  dplyr::mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
+  dplyr::mutate(geno_epi=paste0(label.mutant,label.epistate)) %>% 
+  dplyr::select(peak_id_complete,label.process) %>% 
   dplyr::rename(pathway=label.process) %>% 
-  distinct() %>% 
+  dplyr::distinct() %>% 
   left_join(pathway_map_df) %>% 
-  mutate(
+  dplyr::mutate(
     class = case_when(
       is.na(class) & pathway == "CRC_TISSUE" ~ "colon-specific",
       is.na(class) ~ "other",
@@ -153,7 +154,7 @@ ht=Heatmap(
   col = c("0" = "white", "1" = "grey"),
   left_annotation = row_ann,top_annotation = col_ann
 )
-pdf(file = 'simulated_peaks_with_sparsity_095.pdf')
+pdf(file = 'plots/simulated_peaks_with_sparsity_new_methods.pdf')
 draw(ht)
 dev.off()
 
@@ -198,8 +199,42 @@ dev.off()
 
 
 
+df_peak_final = readRDS("input_data_P05/data/df_peak_final_gene.rds")
+mat_all <- df_peak_final %>% 
+  # filter(label.process%in%c('HALLMARK_APOPTOSIS','HALLMARK_MYC_TARGETS_V1')) %>% 
+  dplyr::mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
+  dplyr::select(cell_id,peak_id_complete,status) %>% 
+  dplyr::mutate(status=as.numeric(status)) %>% 
+  pivot_wider(
+    names_from = peak_id_complete,
+    values_from = status,
+    values_fill = 0
+  )
+mat_all <- as.matrix(mat_all[, -1])
+rownames(mat_all) <- df_peak_final |> dplyr::distinct(cell_id) |> dplyr::pull(cell_id)
 
 
+row_ann_df <- df_peak_final %>% 
+  # filter(label.process%in%c('HALLMARK_APOPTOSIS','HALLMARK_MYC_TARGETS_V1')) %>% 
+  dplyr::mutate(peak_id_complete=paste0(peak,"_",label.process)) %>% 
+  dplyr::mutate(geno_epi=paste0(label.mutant,label.epistate)) %>% 
+  dplyr::select(cell_id,geno_epi) %>% 
+  dplyr::distinct()
+
+row_ann_df <- row_ann_df[match(rownames(mat_all), row_ann_df$cell_id), ]
+row_ann <- rowAnnotation(epistate=row_ann_df$geno_epi,col=list(epistate=mutant_cols))
+
+ht=Heatmap(
+  mat_all,
+  show_row_dend = F,
+  cluster_columns = T,
+  cluster_rows = T,
+  show_column_dend = F,
+  show_column_names = T,show_row_names = F,
+  name = "status",
+  col = c("0" = "white", "1" = "grey"),
+  left_annotation = row_ann
+)
 activity_list <- readRDS('input_data_P05/data/activity_list_gene_level_log1pscore.rds')
 activity_df <- convert_activity_list(activity_list) %>% 
   mutate(epigenetic_class = paste0(mutant, epistate))

@@ -328,110 +328,188 @@ sample_fragments_for_peak_vec <- function(
 }
 
 
-get_background_regions <- function(peak_fragments_df,genome,gaps_file,centromeres_file,filter_small_than=150){
-  #### peak_df is a dataframe with all the peaks for that cell
-  #### like this one
-  # peak_id peak_chr peak_start  peak_end
-  # 1        chr1-1006219-1006719     chr1    1006219   1006719
-  # 2        chr1-1068981-1069481     chr1    1068981   1069481
-  # 3      chr1-10694533-10695033     chr1   10694533  10695033
-  # 4    chr1-108559703-108560203     chr1  108559703 108560203
-  # 5    chr1-109763665-109764165     chr1  109763665 109764165
-  # 6    chr1-111204245-111204745     chr1  111204245 111204745
-  peak_region_df <- peak_fragments_df %>% 
-    group_by(peak) %>% 
-    summarise(start_peak_region=min(fragment_start),
-              end_peak_region=max(fragment_end),
-              chr_peak_region=paste0('chr',unique(fragment_chr)))
-  gr_peak_union = GRanges(
-    seqnames = peak_region_df$chr_peak_region,
-    ranges = IRanges(start = peak_region_df$start_peak_region, end = peak_region_df$end_peak_region),
-  )
-  if (genome=='hg38'){
-    gr_genome <- GRanges(
-      seqnames = names(seqlengths(BSgenome.Hsapiens.UCSC.hg38::BSgenome.Hsapiens.UCSC.hg38)),
-      ranges = IRanges(
-        start = 1,
-        end = seqlengths(BSgenome.Hsapiens.UCSC.hg38)
-      ))
-  } else if (genome=='hg19'){
-    gr_genome <- GRanges(
-      seqnames = names(seqlengths(BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19)),
-      ranges = IRanges(
-        start = 1,
-        end = seqlengths(BSgenome.Hsapiens.UCSC.hg19)
-      ))
+# get_background_regions <- function(peak_fragments_df,genome,gaps_file,centromeres_file,filter_small_than=150){
+#   #### peak_df is a dataframe with all the peaks for that cell
+#   #### like this one
+#   # peak_id peak_chr peak_start  peak_end
+#   # 1        chr1-1006219-1006719     chr1    1006219   1006719
+#   # 2        chr1-1068981-1069481     chr1    1068981   1069481
+#   # 3      chr1-10694533-10695033     chr1   10694533  10695033
+#   # 4    chr1-108559703-108560203     chr1  108559703 108560203
+#   # 5    chr1-109763665-109764165     chr1  109763665 109764165
+#   # 6    chr1-111204245-111204745     chr1  111204245 111204745
+#   peak_region_df <- peak_fragments_df %>% 
+#     group_by(peak) %>% 
+#     summarise(start_peak_region=min(fragment_start),
+#               end_peak_region=max(fragment_end),
+#               chr_peak_region=paste0('chr',unique(fragment_chr)))
+#   gr_peak_union = GRanges(
+#     seqnames = peak_region_df$chr_peak_region,
+#     ranges = IRanges(start = peak_region_df$start_peak_region, end = peak_region_df$end_peak_region),
+#   )
+#   if (genome=='hg38'){
+#     gr_genome <- GRanges(
+#       seqnames = names(seqlengths(BSgenome.Hsapiens.UCSC.hg38::BSgenome.Hsapiens.UCSC.hg38)),
+#       ranges = IRanges(
+#         start = 1,
+#         end = seqlengths(BSgenome.Hsapiens.UCSC.hg38)
+#       ))
+#   } else if (genome=='hg19'){
+#     gr_genome <- GRanges(
+#       seqnames = names(seqlengths(BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19)),
+#       ranges = IRanges(
+#         start = 1,
+#         end = seqlengths(BSgenome.Hsapiens.UCSC.hg19)
+#       ))
+#   }
+#   gr_outside_peaks <- setdiff(gr_genome, gr_peak_union)
+#   
+#   blacklist_gr <- BiocIO::import(
+#     "https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz"
+#   )
+#   
+#   blacklist_gr <- keepStandardChromosomes(
+#     blacklist_gr,
+#     pruning.mode = "coarse"
+#   )
+#   
+#   cytoband <- read.table(
+#     gzfile(centromeres_file), ## must be a gz
+#     header = FALSE,
+#     sep = '\t',
+#     col.names = c("chr", "start", "end", "name", "stain")
+#   )
+#   centromeres <- GRanges(
+#     seqnames = cytoband$chr[cytoband$stain == "acen"],
+#     ranges = IRanges(
+#       start = cytoband$start[cytoband$stain == "acen"] + 1, # BED is 0-based
+#       end = cytoband$end[cytoband$stain == "acen"]
+#     )
+#   )
+#   
+#   gap <- read.table(
+#     gzfile(gaps_file),
+#     header = FALSE,
+#     stringsAsFactors = FALSE
+#   )
+#   
+#   colnames(gap) <- c(
+#     "bin",
+#     "chr",
+#     "start",
+#     "end",
+#     "ix",
+#     "n",
+#     "size",
+#     "type",
+#     "bridge"
+#   )
+#   
+#   gaps <- GRanges(
+#     seqnames = gap$chr,
+#     ranges = IRanges(
+#       start = gap$start + 1,  # UCSC BED-style 0-based -> GRanges 1-based
+#       end = gap$end
+#     ),
+#     type = gap$type
+#   )
+#   assembly_gaps <- gaps[gaps$type %in% c(
+#     "centromere",
+#     "telomere",
+#     "heterochromatin",
+#     "short_arm",
+#     "contig"
+#   )]
+#   
+#   
+#   gr_background <- setdiff(
+#     gr_outside_peaks,
+#     c(blacklist_gr, centromeres, assembly_gaps)
+#   )
+#   standard_chromosomes <- paste0('chr',seq_along(1:22))
+#   bg <- as.data.frame(gr_background) %>% 
+#     filter(seqnames%in%standard_chromosomes) %>% 
+#     filter(width>=filter_small_than)
+#   colnames(bg)<-c('bg_chr','bg_start','bg_end','bg_width','bg_strand')
+#   return(bg)
+# }
+
+
+
+merge_intervals <- function(df){
+  
+  if(nrow(df) == 0)
+    return(df)
+  
+  df <- df[order(df$start, df$end), ]
+  
+  starts <- c()
+  ends <- c()
+  
+  cur_start <- df$start[1]
+  cur_end <- df$end[1]
+  
+  if(nrow(df) > 1){
+    for(i in 2:nrow(df)){
+      
+      if(df$start[i] <= cur_end + 1){
+        
+        cur_end <- max(cur_end, df$end[i])
+        
+      } else {
+        
+        starts <- c(starts, cur_start)
+        ends <- c(ends, cur_end)
+        
+        cur_start <- df$start[i]
+        cur_end <- df$end[i]
+      }
+    }
   }
-  gr_outside_peaks <- setdiff(gr_genome, gr_peak_union)
   
-  blacklist_gr <- BiocIO::import(
-    "https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz"
-  )
+  starts <- c(starts, cur_start)
+  ends <- c(ends, cur_end)
   
-  blacklist_gr <- keepStandardChromosomes(
-    blacklist_gr,
-    pruning.mode = "coarse"
+  data.frame(
+    start = starts,
+    end = ends
   )
+}
+
+
+complement_intervals <- function(blocked, chr_length){
   
-  cytoband <- read.table(
-    gzfile(centromeres_file), ## must be a gz
-    header = FALSE,
-    sep = '\t',
-    col.names = c("chr", "start", "end", "name", "stain")
-  )
-  centromeres <- GRanges(
-    seqnames = cytoband$chr[cytoband$stain == "acen"],
-    ranges = IRanges(
-      start = cytoband$start[cytoband$stain == "acen"] + 1, # BED is 0-based
-      end = cytoband$end[cytoband$stain == "acen"]
-    )
-  )
+  bg_start <- c()
+  bg_end <- c()
   
-  gap <- read.table(
-    gzfile(gaps_file),
-    header = FALSE,
-    stringsAsFactors = FALSE
-  )
+  prev <- 1
   
-  colnames(gap) <- c(
-    "bin",
-    "chr",
-    "start",
-    "end",
-    "ix",
-    "n",
-    "size",
-    "type",
-    "bridge"
-  )
+  if(nrow(blocked) > 0){
+    
+    for(i in seq_len(nrow(blocked))){
+      
+      if(prev < blocked$start[i]){
+        
+        bg_start <- c(bg_start, prev)
+        bg_end <- c(bg_end, blocked$start[i]-1)
+        
+      }
+      
+      prev <- max(prev, blocked$end[i]+1)
+    }
+  }
   
-  gaps <- GRanges(
-    seqnames = gap$chr,
-    ranges = IRanges(
-      start = gap$start + 1,  # UCSC BED-style 0-based -> GRanges 1-based
-      end = gap$end
-    ),
-    type = gap$type
-  )
-  assembly_gaps <- gaps[gaps$type %in% c(
-    "centromere",
-    "telomere",
-    "heterochromatin",
-    "short_arm",
-    "contig"
-  )]
+  if(prev <= chr_length){
+    
+    bg_start <- c(bg_start, prev)
+    bg_end <- c(bg_end, chr_length)
+    
+  }
   
-  
-  gr_background <- setdiff(
-    gr_outside_peaks,
-    c(blacklist_gr, centromeres, assembly_gaps)
+  data.frame(
+    start = bg_start,
+    end = bg_end
   )
-  standard_chromosomes <- paste0('chr',seq_along(1:22))
-  bg <- as.data.frame(gr_background) %>% 
-    filter(seqnames%in%standard_chromosomes) %>% 
-    filter(width>=filter_small_than)
-  colnames(bg)<-c('bg_chr','bg_start','bg_end','bg_width','bg_strand')
-  return(bg)
 }
 
 simulate_background_fragments <- function(
@@ -510,16 +588,170 @@ simulate_background_fragments <- function(
     # valid <- ends <= chr_bg$bg_end
     
     fragments[[i]] <- data.frame(
-      frag_id = paste0("bg_frag_", seq_len(n)),
-      frag_chr = chr,
-      frag_start = starts,
-      frag_end = ends,
-      frag_size = frag_size
+      fragment = paste0("bg_frag_", seq_len(n)),
+      fragment_chr = str_remove(chr,pattern = "chr"),
+      fragment_start = starts,
+      fragment_end = ends,
+      fragment_size = frag_size
     )
   }
   
   bind_rows(fragments)
 }
+
+
+get_background_regions <- function(
+    peak_fragments_df,
+    chrom_sizes_file,
+    blacklist_file,
+    gaps_file,
+    centromeres_file,
+    filter_small_than = 150
+){
+  
+
+  
+  peak_region_df <- peak_fragments_df %>%
+    group_by(peak) %>%
+    summarise(
+      start=min(fragment_start),
+      end=max(fragment_end),
+      chr=paste0("chr", unique(fragment_chr)),
+      .groups="drop"
+    )
+
+  
+  chrom_sizes <- chrom_sizes_file %>% 
+    dplyr::rename(chr=V1,
+                  length=V3) %>% 
+    dplyr::mutate(chr=paste0('chr',chr))
+
+  
+  blacklist <-read.table(blacklist_file,col.names = c("chr","start","end"))
+  
+  
+  ## BED -> 1-based
+  blacklist$start <- blacklist$start + 1
+  
+
+  
+  cytoband <- read.table(
+    gzfile(centromeres_file),
+    header=FALSE,
+    sep="\t",
+    stringsAsFactors=FALSE
+  )
+  
+  colnames(cytoband) <- c(
+    "chr",
+    "start",
+    "end",
+    "name",
+    "stain"
+  )
+  
+  centromeres <- cytoband %>%
+    filter(stain=="acen") %>%
+    transmute(
+      chr,
+      start=start+1,
+      end=end
+    )
+
+  
+  gap <- read.table(
+    gzfile(gaps_file),
+    header=FALSE,
+    stringsAsFactors=FALSE
+  )
+  
+  colnames(gap) <- c(
+    "bin",
+    "chr",
+    "start",
+    "end",
+    "ix",
+    "n",
+    "size",
+    "type",
+    "bridge"
+  )
+  
+  assembly_gaps <- gap %>%
+    filter(type %in% c(
+      "centromere",
+      "telomere",
+      "heterochromatin",
+      "short_arm",
+      "contig"
+    )) %>%
+    transmute(
+      chr,
+      start=start+1,
+      end=end
+    )
+  
+
+  
+  blocked <- bind_rows(
+    peak_region_df,
+    blacklist,
+    centromeres,
+    assembly_gaps
+  )
+
+  
+  background_list <- list()
+  
+  for(chr in chrom_sizes$chr){
+    
+    chr_length <- chrom_sizes$length[chrom_sizes$chr==chr]
+    
+    chr_blocked <- blocked %>%
+      filter(chr==!!chr) %>%
+      select(start,end)
+    
+    if(nrow(chr_blocked)>0){
+      
+      chr_blocked <- merge_intervals(chr_blocked)
+      
+    }
+    
+    bg <- complement_intervals(
+      chr_blocked,
+      chr_length
+    )
+    
+    if(nrow(bg)>0){
+      
+      bg$chr <- chr
+      
+      background_list[[chr]] <- bg
+      
+    }
+    
+  }
+  
+  bg <- bind_rows(background_list) %>%
+    mutate(
+      width=end-start+1
+    ) %>%
+    filter(
+      chr %in% paste0("chr",1:22),
+      width>=filter_small_than
+    ) %>%
+    select(
+      bg_chr=chr,
+      bg_start=start,
+      bg_end=end,
+      bg_width=width
+    )
+  
+  bg$bg_strand <- "*"
+  
+  bg
+}
+
 get_epigenetic_activity<- function(activity,epistate){
   programs <- activity[[epistate]]
   return(programs)
@@ -612,9 +844,9 @@ convert_activity_list<-function(activity_list){
     imap_dfr(cell, function(sign_values, sign_name) {
       
       tibble(
-        mutant = cell_name,
-        epistate = sign_name,
-        pathway = names(sign_values),
+        epistate = cell_name,
+        pathway = sign_name,
+        # pathway = names(sign_values),
         activity = as.numeric(sign_values)
       )
       
