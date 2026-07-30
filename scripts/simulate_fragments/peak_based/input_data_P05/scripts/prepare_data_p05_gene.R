@@ -79,7 +79,7 @@ epigenetic_states <- c("A+","A-","B+","B-")
 
 p05_peaks <- epigenetic_peaks
 sampled_genes = p05_peaks %>% 
-  pull(gene) %>% unique() %>%  sample(size = 100)
+  pull(gene) %>% unique() %>%  sample(size = 10)
 p05_peaks_sampled = p05_peaks %>% 
   filter(gene%in%c(sampled_genes,"MYC"))
 

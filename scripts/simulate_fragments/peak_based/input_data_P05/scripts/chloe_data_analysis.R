@@ -1,4 +1,5 @@
 library(dplyr)
+library(tidyverse)
 library(ComplexHeatmap)
 library(circlize)
 # library(ArchR)
@@ -31,8 +32,17 @@ peaks_df = peaks %>%
   filter(distToTSS<=1000) %>% ### do not know if to use the score or the distance from the gene start
   select(seqnames,start,end,nearestGene,peakType) %>% 
   dplyr::rename(gene=nearestGene) %>% 
+  dplyr::group_by(gene) %>% 
+  dplyr::summarise(n_peaks=n()) %>% 
   left_join(genes_hallmark,relationship = "many-to-many") %>% 
   filter(!is.na(pathway))
+
+
+mat_long = mat_long %>% 
+  left_join(peaks_df,relationship = "many-to-many") %>% 
+  mutate(score_peak_corrected=score/n_peaks) %>% 
+  select(cell_id,gene,score,score_peak_corrected) %>% 
+  na.omit() %>% distinct()
 
 # peaks_df_with_gene_scores <- peaks_df %>% 
 #   left_join(mat_long,relationship = "many-to-many") %>% 
@@ -54,56 +64,118 @@ peaks_df = peaks %>%
 #     #   sd(mean_score)
 #   )
 
-mean_scores <- mat_long %>% 
-  dplyr::left_join(cell_epigenetic_df,relationship = "many-to-many") %>%
-  dplyr::filter(gene%in%peaks_df$gene) %>% 
-  dplyr::filter(gene!="CBS") %>% 
-  dplyr::filter(!is.na(consensus_cluster)) %>%
-  dplyr::group_by(gene,consensus_cluster) %>%
-  dplyr::summarise(mean_score=mean(score),
-                   log1p_score=plogis(scale(log1p(score)))) %>%
-  dplyr::ungroup() %>% 
-  dplyr::mutate(mean_score_norm =(mean_score - min(mean_score)) /
-                  (max(mean_score) - min(mean_score))) %>% 
-  dplyr::group_by(gene) %>%
-  dplyr::mutate(
-      mean_score_norm_per_epi = (mean_score - min(mean_score)) /
-        (max(mean_score) - min(mean_score))
-    )
+# mean_scores <- mat_long %>% 
+#   dplyr::left_join(cell_epigenetic_df,relationship = "many-to-many") %>%
+#   dplyr::filter(gene%in%peaks_df$gene) %>% 
+#   # dplyr::filter(gene!="CBS") %>% 
+#   dplyr::filter(!is.na(consensus_cluster)) %>%
+#   dplyr::group_by(gene,consensus_cluster) %>%
+#   dplyr::summarise(mean_score=mean(score),
+#                    log1p_score=plogis(scale(log1p(score)))) %>%
+#   dplyr::ungroup() %>% 
+#   dplyr::mutate(mean_score_norm =(mean_score - min(mean_score)) /
+#                   (max(mean_score) - min(mean_score))) %>% 
+#   dplyr::group_by(gene) %>%
+#   dplyr::mutate(
+#       mean_score_norm_per_epi = (mean_score - min(mean_score)) /
+#         (max(mean_score) - min(mean_score))
+#     )
 
 
-mean_scores_logscaled <- mat_long %>% 
+mean_scores_original <- mat_long %>% 
   dplyr::left_join(cell_epigenetic_df,relationship = "many-to-many") %>%
   dplyr::filter(gene%in%peaks_df$gene) %>% 
-  dplyr::filter(gene!="CBS") %>% 
+  dplyr::filter(gene!="CBS") %>%
   dplyr::filter(!is.na(consensus_cluster)) %>%
   dplyr::group_by(gene,consensus_cluster) %>%
   dplyr::summarise(mean_score=mean(score)) %>% 
   ungroup() %>% 
-  dplyr::mutate(log1p_score_sigmoid=plogis(scale(log1p(mean_score)))) %>% 
+  # dplyr::mutate(log1p_score_sigmoid=plogis(scale(log1p(mean_score)))) %>% 
   dplyr::mutate(log1p_score=scales::rescale(log1p(mean_score), to = c(0, 1))) %>% 
   dplyr::mutate(
-    mean_score_norm_per_epi = (mean_score - min(mean_score)) /
+    mean_score_01_norm = (mean_score - min(mean_score)) /
       (max(mean_score) - min(mean_score))
   )
 
-scores_peaks_df = mean_scores_logscaled %>% 
+mean_scores_peak_corrected <- mat_long %>% 
+  dplyr::left_join(cell_epigenetic_df,relationship = "many-to-many") %>%
+  dplyr::filter(gene%in%peaks_df$gene) %>% 
+  dplyr::filter(gene!="CBS") %>%
+  dplyr::filter(!is.na(consensus_cluster)) %>%
+  dplyr::group_by(gene,consensus_cluster) %>%
+  dplyr::summarise(mean_score=mean(score_peak_corrected)) %>% 
+  ungroup() %>% 
+  # dplyr::mutate(log1p_score_sigmoid=plogis(scale(log1p(mean_score)))) %>% 
+  dplyr::mutate(log1p_score=scales::rescale(log1p(mean_score), to = c(0, 1))) %>% 
+  dplyr::mutate(
+    mean_score_01_norm = (mean_score - min(mean_score)) /
+      (max(mean_score) - min(mean_score))
+  )
+
+
+
+mean_scores_original %>% 
+  select(
+    gene,
+    mean_score,
+    log1p_score,
+    mean_score_01_norm
+  ) %>%
+  pivot_longer(
+    cols = -gene,
+    names_to = "measure",
+    values_to = "value"
+  ) %>% 
+  ggplot(aes(x = measure, y = value)) +
+  geom_boxplot(outliers = F) +
+  theme_minimal() +
+  labs(
+    x = NULL,
+    y = "Value",
+    title = "Distribution of scoring measures-Original gene scores"
+  )
+
+
+mean_scores_peak_corrected %>% 
+  select(
+    gene,
+    mean_score,
+    log1p_score,
+    mean_score_01_norm
+  ) %>%
+  pivot_longer(
+    cols = -gene,
+    names_to = "measure",
+    values_to = "value"
+  ) %>% 
+  ggplot(aes(x = measure, y = value)) +
+  geom_boxplot(outliers = F) +
+  theme_minimal() +
+  labs(
+    x = NULL,
+    y = "Value",
+    title = "Distribution of scoring measures-Corrected by # of peaks"
+  )
+
+
+
+scores_peaks_df = mean_scores_peak_corrected %>% 
   select(gene,consensus_cluster,log1p_score) %>% 
   left_join(peaks_df,relationship = "many-to-many")
 
 saveRDS(object = scores_peaks_df,file = "../data/a_scores_per_gene_log1p_score.rds")
   
-mat_mean_scores_norm_group <- mean_scores_logscaled %>%
+mat_mean_scores_norm_group <- mean_scores_original %>%
   ungroup() %>%
-  select(gene,mean_score_norm_per_epi,consensus_cluster) %>% 
+  select(gene,mean_score_01_norm,consensus_cluster) %>% 
   distinct() %>% 
   tidyr::pivot_wider(
     names_from = consensus_cluster,
-    values_from = mean_score_norm_per_epi,values_fill = 0
+    values_from = mean_score_01_norm,values_fill = 0
   ) %>%
   as.data.frame()
 
-mat_mean_scores_log1 <- mean_scores_logscaled %>%
+mat_mean_scores_log1 <- mean_scores_original %>%
   ungroup() %>%
   select(gene,log1p_score,consensus_cluster) %>% 
   distinct() %>% 
@@ -114,7 +186,7 @@ mat_mean_scores_log1 <- mean_scores_logscaled %>%
   as.data.frame()
 
 
-mat_mean_scores_not_norm <- mean_scores_logscaled %>%
+mat_mean_scores_not_norm <- mean_scores_original %>%
   ungroup() %>%
   select(gene,mean_score,consensus_cluster) %>% 
   distinct() %>% 

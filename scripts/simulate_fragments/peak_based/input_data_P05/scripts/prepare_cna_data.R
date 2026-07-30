@@ -29,8 +29,8 @@ clonal_seg_merged =seg_classification %>%
   ) %>%
   group_by(chrom, grp) %>%
   summarise(
-    start = first(start),
-    end = last(end),
+    start = dplyr::dplyr::first(start),
+    end = dplyr::dplyr::last(end),
     prop_clade = mean(prop_clade),
     CN.states=mean(CN.states),
     .groups = "drop"
@@ -64,8 +64,8 @@ subclonal_seg_merged =seg_classification %>%
   ) %>%
   group_by(chrom, grp) %>%
   summarise(
-    start = first(start),
-    end = last(end),
+    start = dplyr::dplyr::first(start),
+    end = dplyr::dplyr::last(end),
     prop_clade = mean(prop_clade),
     CN.states=mean(CN.states),
     .groups = "drop"
@@ -90,8 +90,8 @@ private_cn_clone_1 = seg_classification %>%
   ) %>%
   group_by(chrom, grp) %>%
   summarise(
-    start = first(start),
-    end = last(end),
+    start = dplyr::first(start),
+    end = dplyr::last(end),
     prop_clade = mean(prop_clade),
     CN.states=mean(CN.states),
     .groups = "drop"
@@ -112,6 +112,37 @@ private_cn_clone_1_selected = private_cn_clone_1%>%
 
 ###### CLONE 2 private CN events
 # use the MYC gene as amplified
+private_cn_clone_2 = seg_classification %>% 
+  filter(seg_type!='clonal') %>% 
+  filter(CN.states!=2) %>% 
+  filter(CELL=="Clade2") %>% 
+  filter(prop_clade==0.25) %>% 
+  arrange(chrom, start) %>%
+  group_by(chrom) %>%
+  mutate(
+    grp = cumsum(
+      row_number() == 1 |
+        start != lag(end) + 1
+    )
+  ) %>%
+  group_by(chrom, grp) %>%
+  summarise(
+    start = dplyr::first(start),
+    end = dplyr::last(end),
+    prop_clade = mean(prop_clade),
+    CN.states=mean(CN.states),
+    .groups = "drop"
+  ) %>%
+  mutate(seg_id = paste(chrom, start, end, sep = ":"))
+private_cn_clone_2_selected = private_cn_clone_2%>% 
+  mutate(cn_len=end-start) %>% 
+  filter(cn_len>=1e7) %>%
+  select(!grp) %>% 
+  distinct() %>% 
+  mutate(CN.states=round(CN.states,0)) %>% 
+  mutate(type=case_when(CN.states==1~"D",
+                        TRUE~"A")) %>% 
+  mutate(genetic_clone='A')
 
 ###### CLONE 3-4 private CN events
 private_cn_clone_34 = seg_classification %>% 
@@ -129,8 +160,8 @@ private_cn_clone_34 = seg_classification %>%
   ) %>%
   group_by(chrom, grp) %>%
   summarise(
-    start = first(start),
-    end = last(end),
+    start = dplyr::first(start),
+    end = dplyr::last(end),
     prop_clade = mean(prop_clade),
     CN.states=mean(CN.states),
     .groups = "drop"
@@ -165,8 +196,8 @@ private_cn_clone_4 = seg_classification %>%
   ) %>%
   group_by(chrom, grp) %>%
   summarise(
-    start = first(start),
-    end = last(end),
+    start = dplyr::first(start),
+    end = dplyr::last(end),
     prop_clade = mean(prop_clade),
     CN.states=mean(CN.states),
     .groups = "drop"
