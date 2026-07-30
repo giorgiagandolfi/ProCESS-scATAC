@@ -1,10 +1,8 @@
 #!/usr/bin/env Rscript
-# library(ProCESS)
 library(GenomicRanges)
 library(rtracklayer)
 library(dplyr)
 library(ggplot2)
-library(patchwork)
 
 source("${projectDir}/bin/utils.R")
 called_peaks <- read.table("${peaks}", header = FALSE, sep = "\\t")
