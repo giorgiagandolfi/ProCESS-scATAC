@@ -15,14 +15,14 @@ frags_peak_mapping_files <- strsplit("${cell_peak_txt_files}", " ")[[1]]
 simulated_frags_files <- strsplit("${cell_frags_rds_files}", " ")[[1]]
 
 sequenced_peaks_list<-list()
-for (i in seq_len(simulated_frags_files)){
+for (i in 1:length(simulated_frags_files)){
   peak_frags_pre_noise = read.table(frags_peak_mapping_files[i])
   peak_frags_pre_noise = peak_frags_pre_noise %>% 
     dplyr::mutate(fragment_start=round(fragment_start,0)) %>% 
     dplyr::mutate(fragment_end=round(fragment_end,0))
   sequenced_frags = readRDS(simulated_frags_files[i])
   sequenced_frags = sequenced_frags %>% 
-    plyr::mutate(fragment_start=round(fragment_start,0)) %>% 
+    dplyr::mutate(fragment_start=round(fragment_start,0)) %>% 
     dplyr::mutate(fragment_end=round(fragment_end,0))
   sequenced_frags = sequenced_frags %>% 
     filter(sequenced==1) %>% 

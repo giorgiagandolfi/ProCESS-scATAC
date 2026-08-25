@@ -4,8 +4,8 @@ process ART_MODERN {
 
     conda "bioconda::art_modern=1.3.2"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/art_modern:1.3.2--h4b8a817_0' :
-        'biocontainers/art_modern:1.3.2--h4b8a817_0' }"
+        'https://depot.galaxyproject.org/singularity/art_modern:1.3.2--hb45bfb9_0' :
+        'biocontainers/art_modern:1.3.2--hb45bfb9_0' }"
         
     publishDir { "${params.outdir}/fastq/${meta.id}" }, mode: 'copy'
 
