@@ -87,7 +87,7 @@ for (cp in 1:nrow(cell_peaks)){
   if (cell_peaks\$status[cp]==1){
     cell_alleles = genome\$get_alleles_covering_ref_region(cell_peaks\$chr[cp],
                                                            cell_peaks\$from[cp],
-                                                           cell_peaks\$peak_lenght[cp])
+                                                           cell_peaks\$to[cp]-cell_peaks\$from[cp])
     simulated_frags_cell <- sample_fragments_for_peak_vec_allele(
       peak_id   = cell_peaks\$peak[cp],
       peak_chr = cell_peaks\$chr[cp],
