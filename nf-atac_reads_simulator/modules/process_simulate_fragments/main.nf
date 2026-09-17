@@ -30,6 +30,7 @@ process PROCESS_SIMULATE_FRAGMENT {
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
+    def tumour_type     = task.ext.args?.contains('--tumour_type') ? '' : "--tumour_type ${params.tumour_type}"
 
 
     template "main_script.R"

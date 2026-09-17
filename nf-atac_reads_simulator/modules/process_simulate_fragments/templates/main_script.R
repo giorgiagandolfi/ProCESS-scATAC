@@ -15,7 +15,7 @@ blacklist_file<- "${encode_blacklist}" #"ENCFF356LFX.bed.gz"
 gap_file <- "${gap_file}"
 centromere_file <- "${centromere_file}"
 fragm_len_dist_out <- "${fragm_len_dist_out}"
-
+tt <- "${params.tumour_type}"
 
 
 
@@ -39,6 +39,10 @@ activity <- readRDS(activity_list_file)
 peaks <-  readRDS(peak_list_file)
 selected_frags_dist_len = readRDS(fragment_size_distribution)
 
+tt_peaks <- read.table("${projectDir}/bin/tissue_type_region_selected.tsv",header = T,sep = "\t",
+                       quote = "") %>% 
+  dplyr::filter(tumour_type==tt) %>% 
+  dplyr::mutate(chr = gsub("^chr", "", chr))
 
 peak_access_labelling <- function(node) {
   cell_id_node = node\$cell_id
@@ -66,6 +70,18 @@ peak_access_labelling <- function(node) {
     message(paste0("Processing pathway: ",p))
     
   }
+  cell_tt_peaks <- tt_peaks %>% 
+    dplyr::mutate(
+      status = 1,
+      cell_id = cell_id_node,
+      mutant = cell_mutant,
+      epistate = cell_epistate
+    ) %>% 
+    dplyr::mutate(pathway="TISSUE") %>% 
+    dplyr::select(c("peak","chr","from","to","pathway","status","cell_id","mutant","epistate"))
+  cell_active_peaks <- do.call("rbind",cell_activity_peaks) %>% 
+    rbind(cell_tt_peaks)
+  
   cell_active_peaks <- do.call("rbind",cell_activity_peaks)
   return(cell_active_peaks)
 }
