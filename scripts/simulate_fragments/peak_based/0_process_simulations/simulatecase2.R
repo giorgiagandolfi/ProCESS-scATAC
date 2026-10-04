@@ -66,10 +66,9 @@ plot_tissue(sim)+
 
 sim$mutate_progeny(starting_cell,"G3")
 sim$set_rates(list("G2" = list(duplication = 0.4, death = 0.2)))
-sim$set_rates(list("G1" = list(duplication = 0.3, death = 0.3)))
+sim$set_rates(list("G1" = list(duplication = 0.2, death = 0.4)))
 sim$run_up_to_time(60)
-plot_tissue(sim)+
-  facet_grid(mutant~epistate)
+plot_tissue(sim)
 
 
 
@@ -96,7 +95,7 @@ plot_tissue(sim)+
 
 # Sample all clones toghter
 bbox_width=40
-bbox1_p <- c(430,405)
+bbox1_p <- c(340,290)
 bbox1_q <- bbox1_p + bbox_width
 # view the boxes
 plot_tissue(sim) +
@@ -107,8 +106,150 @@ plot_tissue(sim) +
     ymax = bbox1_q[2],
     fill = NA,
     color = "black"
-  )
+  )+
+  facet_wrap(~mutant)
+
+
+
 sim$sample_cells("S3", bbox1_p, bbox1_q)
 plot_tissue(sim,at_sample = "S3")
 sample_forest <- sim$get_sample_forest()
+plot_forest(sample_forest)
+sampled_epigenetic_prop= sample_forest$get_nodes() %>%
+  dplyr::filter(!is.na(sample)) %>%
+  dplyr::group_by(epistate,mutant) %>%
+  dplyr::summarise(n=n())
+sampled_epigenetic_prop <- sampled_epigenetic_prop %>%
+  dplyr::group_by(mutant) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup()
+
+sankey_epi <-ggplot(sampled_epigenetic_prop,
+                    aes(x = mutant, stratum = epistate, alluvium = epistate,
+                        y = prop, fill = epistate)) +
+  geom_flow(alpha = 0.4) +
+  geom_stratum(width = 1/3, color = "grey30") +
+  geom_text(stat = "stratum", aes(label = epistate), size = 3) +
+  labs(title = "Epistate proportions across mutant status",
+       x = "Mutant", y = "Count", fill = "Epistate") +
+  scale_fill_manual(values=c("E1"="forestgreen","E2"="goldenrod","E3"="orchid2"))+
+  theme_minimal()
+
+
+sampled_genetic_prop= sample_forest$get_nodes() %>%
+  dplyr::filter(!is.na(sample)) %>%
+  dplyr::group_by(epistate,mutant) %>%
+  dplyr::summarise(n=n())
+sampled_genetic_prop <- sampled_genetic_prop %>%
+  dplyr::group_by(epistate) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup()
+
+sankey_gen <-ggplot(sampled_genetic_prop,
+                    aes(x = epistate, stratum = mutant, alluvium = mutant,
+                        y = prop, fill = mutant)) +
+  geom_flow(alpha = 0.4) +
+  geom_stratum(width = 1/3, color = "grey30") +
+  geom_text(stat = "stratum", aes(label = mutant), size = 3) +
+  labs(title = "Mutant proportions across epistate",
+       x = "Epistate", y = "Count", fill = "Mutant") +
+  scale_fill_manual(values=c("G1"="coral2","G2"="turquoise4","G3"="darkorange"))+
+  theme_minimal()
+color_map_epi = c("G1[E1]"="forestgreen",
+                  "G2[E1]"="forestgreen",
+                  "G3[E1]"="forestgreen",
+                  "G1[E2]"="goldenrod",
+                  "G2[E2]"="goldenrod",
+                  "G3[E2]"="goldenrod",
+                  "G1[E3]"="orchid2",
+                  "G2[E3]"="orchid2",
+                  "G3[E3]"="orchid2"
+)
+color_map_gen = c("G1[E1]"="coral2",
+                  "G2[E1]"="turquoise4",
+                  "G3[E1]"="darkorange",
+                  "G1[E2]"="coral2",
+                  "G2[E2]"="turquoise4",
+                  "G3[E2]"="darkorange",
+                  "G1[E3]"="coral2",
+                  "G2[E3]"="turquoise4",
+                  "G3[E3]"="darkorange"
+)
+p1_forest<-plot_forest(sample_forest,color_map = color_map_epi)+theme(legend.position = "none")+ggtitle(label="Cell coloured by epistate")
+p2_forest <-plot_forest(sample_forest,color_map = color_map_gen)+theme(legend.position = "none")+ggtitle(label="Cell coloured by genetic clone")
+library(grid)
+ht_q_G1 <- grid.grabExpr(
+  draw(q_G1$plot_q)
+)
+ht_q_G2 <- grid.grabExpr(
+  draw(q_G2$plot_q)
+)
+ht_q_G3 <- grid.grabExpr(
+  draw(q_G3$plot_q)
+)
+report <- wrap_plots(
+  list(ht_q_G1,ht_q_G2,ht_q_G3, sankey_gen, sankey_epi,p2_forest,p1_forest),
+  design = "AABBCC\nDDDEEE\nFFFGGG\nFFFGGG"
+) + plot_annotation(tag_levels = "a")&
+  theme(legend.position = "bottom")
+ggsave(filename = "/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC_project/ProCESS-scATAC/scripts/simulate_fragments/peak_based/0_process_simulations/report_case_2.pdf",plot = report,dpi = 300,width = 10,height = 15)
+
+sample_forest$save("sample_forest_atac_case_2.sff")
+dir.create("process_references_v1.3.5")
+setwd("process_references_v1.3.5")
+
+m_engine <- MutationEngine(setup_code = "GRCh38",tumour_type = "COADREAD", context_sampling = 20,
+                           germline_subject = "NA20514",
+                           COSMIC_account = list("email"="giorgia.gandolfi@phd.units.it","password"="2*db!XQ4sgQ!dbg"))
+
+
+mu_SNV = 1e-9
+mu_CNA = 0
+mu_INDELs = 1e-9
+
+CNA_Clone0_1 = ProCESS::CNA(type = "D", "11",
+                            from = 48500001, len = 1e7)
+CNA_Clone0_2  = ProCESS::CNA(type = "D", "5",
+                             from = 1000001, len = 109499999,allele = 0)
+CNA_Clone0_3 = ProCESS::CNA(type = "D","17",
+                            from = 500001, len = 42999999)
+
+# chrX      5 107000001 150500000       0.25         1 chrX:107000001:150500000 43499999 D
+
+CNA_CloneA = ProCESS::CNA(type = "D", "X",
+                          from = 107000001, len = 43499999)
+
+
+
+CNA_CloneB_1 = ProCESS::CNA(type = "A", "8",
+                            from = 127118340, len = 1e7,src_allele = 1)
+
+
+## Drivers for the tumors
+m_engine$add_mutant(mutant_name = "G1",
+                    passenger_rates = list("E1" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E2" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E3" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E4" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA)),
+                    drivers = list("APC Q1294Gfs*6","TP53 R175H",CNA_Clone0_1,CNA_Clone0_2,CNA_Clone0_3))
+m_engine$add_mutant(mutant_name = "G2",
+                    passenger_rates = list("E1" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E2" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E3" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E4" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA)),
+                    drivers = list("KRAS Q22K",CNA_CloneA))
+
+m_engine$add_mutant(mutant_name = "G3",
+                    passenger_rates = list("E1" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E2" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E3" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA),
+                                           "E4" = c(SNV = mu_SNV, indel = mu_INDELs,CNA=mu_CNA)),
+                    drivers = list("GNAS R844H",CNA_CloneB_1))
+
+m_engine$add_exposure(time = 0,coefficients = c(SBS1 = 0.15,SBS5 = 0.40,
+                                                SBS18 = 0.15,SBS17b = 0.20,ID1 = 0.40,ID2 = 0.40,ID18=0.2,SBS88 = 0.10))
+phylo_forest <- m_engine$place_mutations(sample_forest, num_of_preneoplatic_SNVs=800, num_of_preneoplatic_indels=200)
+
+phylo_forest$save("../phylo_forest_atac_case_2.sff")
+
 

@@ -104,7 +104,7 @@ sim$set_rates(list("G1" = list(
   P1 = list(duplication = 2, death = 0.1, P2 = 0.2), ### increase rates
   P2 = list(duplication = 2.3, death = 0.1, P1 = 0.5) ####### increase rates of growth like a relapse that growths faster
 )))
-sim$run_up_to_time(220)
+sim$run_up_to_time(180)
 
 p_ts <- plot_timeseries(sim,color_map = c("G1[P1]"="goldenrod","G1[P2]"="orchid2")) +
   annotate(
@@ -124,6 +124,7 @@ count_time_p7 <- sim$get_cells() %>%
   dplyr::mutate(time=sim$get_clock())
 end_time_sim <- sim$get_clock()
 start_time_sim <- 0
+
 count_time_prop <- do.call("rbind",list(count_time_p1,count_time_p2,count_time_p3,count_time_p4,count_time_p6,count_time_p7))
 pheno_prop_sim <- count_time_prop %>% 
   mutate(time=as.factor(round(time,0))) %>% 
@@ -156,10 +157,10 @@ sim$sample_cells("S_POST_T2", bbox$lower_corner, bbox$upper_corner)
 
 ###################
 sim$set_rates(list("G1" = list(
-  P1 = list(duplication = 1.5, death = 0.6, P2 = 0.4),
-  P2 = list(duplication = 1.7, death = 0.4, P1 = 0.3))))
+  P1 = list(duplication = 1.2, death = 0.4, P2 = 0.1),
+  P2 = list(duplication = 1.4, death = 0.4, P1 = 0.5))))
 
-sim$run_up_to_time(240)
+sim$run_up_to_time(200)
 p8=plot_state(sim,color_map = c("G1[P1]"="goldenrod","G1[P2]"="orchid2"))
 count_time_p8 <- sim$get_cells() %>% 
   dplyr::group_by(epistate) %>% 

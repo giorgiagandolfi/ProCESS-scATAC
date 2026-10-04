@@ -118,7 +118,7 @@ sim$set_rates(list("G1" = list(
   P2 = list(duplication = 1.5, death = 0.1, P1 = 0.5) ####### increase rates of growth like a relapse that growths faster
 )))
 sim$run_up_to_time(200)
-sim$get_counts()
+
 p_ts <- plot_timeseries(sim,color_map = c("G1[P1]"="goldenrod","G1[P2]"="orchid2")) +
   annotate(
     "rect",
