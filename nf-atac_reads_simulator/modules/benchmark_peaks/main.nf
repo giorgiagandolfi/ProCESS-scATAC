@@ -12,10 +12,12 @@ process BENCHMARK_PEAKS {
 
     input:
     tuple val(meta), path(peaks), path(cell_peak_txt_files), path(cell_frags_rds_files)
+    
 
     
     output:
     tuple val(meta), path("*.rds"), emit: peak_benchmark_rds
+    tuple val(meta), path("*.pdf"), emit: peak_benchmark_report_pdf
     
     
     script:

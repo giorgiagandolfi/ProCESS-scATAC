@@ -17,6 +17,7 @@ include { SAMTOOLS_MERGE }           from "./modules/bam_merge/main.nf"
 include { SINTO_FRAGMENTS }          from "./modules/call_fragments/main.nf"
 include { SORT_FRAGMENTS }           from "./modules/sort_fragments/main.nf"
 include { CALL_PEAKS }               from "./modules/call_peaks/main.nf"
+// GENERAL BENCHMARKING
 include { BENCHMARK_PEAKS }               from "./modules/benchmark_peaks/main.nf"
 
 workflow {

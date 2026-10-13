@@ -1,6 +1,7 @@
 # library(extraDistr)
 library(data.table)
 library(Matrix)
+library(patchwork)
 rztpois <- function(n, lambda) {
   x <- rpois(n, lambda)
   
@@ -1205,4 +1206,609 @@ evaluate_peaks_new <- function(truth, called, min_overlap = 10) {
     metrics = peak_metrics,
     min_overlap = min_overlap
   ))
+}
+
+
+evaluate_peaks_extended <- function(truth, called, min_overlap = 10) {
+  
+  # Harmonise chromosome names
+  truth$peak_chr <- ifelse(
+    grepl("^chr", truth$peak_chr),
+    truth$peak_chr,
+    paste0("chr", truth$peak_chr)
+  )
+  
+  called$chrom <- ifelse(
+    grepl("^chr", called$chrom),
+    called$chrom,
+    paste0("chr", called$chrom)
+  )
+  
+  # Remove duplicate ground-truth regions
+  truth <- truth %>%
+    distinct(peak_chr, peak_from, peak_to, .keep_all = TRUE)
+  
+  # BED/narrowPeak: 0-based, half-open coordinates.
+  # Convert to GRanges: 1-based, closed coordinates.
+  # Adjust the truth conversion if its coordinates are
+  # already 1-based and inclusive.
+  truth_gr <- GRanges(
+    seqnames = truth$peak_chr,
+    ranges = IRanges(
+      start = truth$peak_from + 1L,
+      end = truth$peak_to
+    )
+  )
+  
+  called_gr <- GRanges(
+    seqnames = called$chrom,
+    ranges = IRanges(
+      start = called$start + 1L,
+      end = called$end
+    )
+  )
+  
+  hits <- findOverlaps(
+    called_gr,
+    truth_gr,
+    minoverlap = min_overlap
+  )
+  
+  called_matched <- unique(queryHits(hits))
+  truth_matched <- unique(subjectHits(hits))
+  # Map simulated regulatory regions to MACS3-called peaks
+  matched_idx <- data.frame(
+    truth_idx = subjectHits(hits),
+    called_idx = queryHits(hits)
+  )
+  
+  # Calculate the number of overlapping base pairs
+  matched_idx$overlap_bp <- width(
+    pintersect(
+      truth_gr[matched_idx$truth_idx],
+      called_gr[matched_idx$called_idx]
+    )
+  )
+  
+  # Create the mapping dataframe
+  peak_mapping_df <- cbind(
+    truth[matched_idx$truth_idx, , drop = FALSE] %>%
+      ungroup() %>%
+      rename_with(~ paste0("simulated_", .x)),
+    
+    called[matched_idx$called_idx, , drop = FALSE] %>%
+      ungroup() %>%
+      rename_with(~ paste0("inferred_", .x))
+  ) %>%
+    mutate(
+      overlap_bp = matched_idx$overlap_bp
+    ) %>%
+    as.data.frame()
+  
+  peak_mapping_df <- peak_mapping_df %>%
+    mutate(
+      simulated_width = simulated_peak_to - simulated_peak_from,
+      inferred_width = inferred_end - inferred_start,
+      
+      fraction_simulated_covered =
+        overlap_bp / simulated_width,
+      
+      fraction_inferred_covered =
+        overlap_bp / inferred_width
+    ) %>% 
+    group_by(inferred_name) %>%
+    mutate(
+      n_simulated_regions = n_distinct(simulated_peak)
+    ) %>%
+    ungroup()
+  
+  
+  n_called <- length(called_gr)
+  n_truth <- length(truth_gr)
+  
+  n_supported <- length(called_matched)
+  n_recovered <- length(truth_matched)
+  
+  precision <- if (n_called > 0) {
+    n_supported / n_called
+  } else NA_real_
+  
+  recall <- if (n_truth > 0) {
+    n_recovered / n_truth
+  } else NA_real_
+  
+  f1 <- if (is.na(precision) || is.na(recall)) {
+    NA_real_
+  } else if (precision + recall > 0) {
+    2 * precision * recall / (precision + recall)
+  } else 0
+  
+  # Base-pair-level overlap
+  truth_union <- reduce(truth_gr)
+  called_union <- reduce(called_gr)
+  
+  intersection_bp <- sum(
+    width(intersect(truth_union, called_union))
+  )
+  
+  union_bp <- sum(
+    width(union(truth_union, called_union))
+  )
+  
+  jaccard <- if (union_bp > 0) {
+    intersection_bp / union_bp
+  } else NA_real_
+  
+  # Number of overlapping regions per peak
+  called_overlap_counts <- tabulate(
+    queryHits(hits), nbins = n_called
+  )
+  
+  # Number of overlapping peaks per truth region
+  truth_overlap_counts <- tabulate(
+    subjectHits(hits), nbins = n_truth
+  )
+  
+  called_results <- called %>%
+    mutate(
+      recovered_truth_regions = called_overlap_counts,
+      supported = recovered_truth_regions > 0,
+      merges_regions = recovered_truth_regions > 1
+    )
+  
+  truth_results <- truth %>%
+    mutate(
+      overlapping_called_peaks = truth_overlap_counts,
+      recovered = overlapping_called_peaks > 0,
+      split_across_peaks = overlapping_called_peaks > 1
+    )
+  
+  metrics <- data.frame(
+    n_called = n_called,
+    n_truth = n_truth,
+    n_supported_called = n_supported,
+    n_recovered_truth = n_recovered,
+    precision = precision,
+    recall = recall,
+    f1 = f1,
+    jaccard = jaccard,
+    n_peaks_merging_regions =
+      sum(called_overlap_counts > 1),
+    n_regions_overlapping_multiple_peaks =
+      sum(truth_overlap_counts > 1)
+  )
+  
+  list(
+    metrics = metrics,
+    peak_mapping_df = peak_mapping_df,
+    truth_results = truth_results,
+    called_results = called_results,
+    hits = hits
+  )
+}
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+plot_peak_example <- function(
+    peak_name,
+    results,
+    fragments,
+    flank = 500
+) {
+  
+  called <- results$called_results %>% ungroup()
+  truth <- results$truth_results %>% ungroup()
+  
+  # Select MACS3 peak
+  selected <- called %>%
+    filter(name == peak_name)
+  
+  if (nrow(selected) != 1) {
+    stop("Peak name not found or not unique.")
+  }
+  
+  chr <- selected$chrom[1]
+  
+  region_start <- max(0L, selected$start[1] - flank)
+  region_end <- selected$end[1] + flank
+  
+  # Simulated regulatory regions
+  truth_local <- truth %>%
+    filter(
+      peak_chr == chr,
+      peak_from < region_end,
+      peak_to > region_start
+    )
+  
+  # All MACS3 peaks within the selected interval
+  called_local <- called %>%
+    filter(
+      chrom == chr,
+      start < region_end,
+      end > region_start
+    )
+  
+  # Sequenced fragments overlapping the region
+  frags_local <- fragments %>%
+    filter(
+      fragment_chr == chr,
+      fragment_start < region_end,
+      fragment_end > region_start
+    )
+  
+  # Calculate coverage only for the selected interval
+  window_width <- as.integer(region_end - region_start)
+  
+  coverage_values <- numeric(window_width)
+  
+  if (nrow(frags_local) > 0) {
+    
+    # Clip fragments to the plotting window
+    frag_start <- pmax(
+      as.integer(frags_local$fragment_start),
+      region_start
+    )
+    
+    frag_end <- pmin(
+      as.integer(frags_local$fragment_end),
+      region_end
+    )
+    
+    valid <- frag_end > frag_start
+    
+    if (any(valid)) {
+      ir <- IRanges(
+        start = frag_start[valid] - region_start + 1L,
+        end = frag_end[valid] - region_start
+      )
+      
+      coverage_values <- as.numeric(
+        IRanges::coverage(ir, width = window_width)
+      )
+    }
+  }
+  
+  coverage_df <- data.frame(
+    position = seq.int(
+      region_start,
+      region_end - 1L
+    ),
+    coverage = coverage_values
+  )
+  
+  # Track 1: simulated regulatory regions
+  p_truth <- ggplot(truth_local) +
+    geom_segment(
+      aes(
+        x = peak_from,
+        xend = peak_to,
+        y = 1,
+        yend = 1
+      ),
+      linewidth = 5,
+      colour = "#3A9D7A"
+    ) +
+    coord_cartesian(
+      xlim = c(region_start, region_end)
+    ) +
+    labs(y = "Simulated") +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.title.x = element_blank(),
+      axis.text.x = element_blank()
+    )
+  
+  # Track 2: MACS3 peaks
+  p_called <- ggplot(called_local) +
+    geom_segment(
+      aes(
+        x = start,
+        xend = end,
+        y = 1,
+        yend = 1
+      ),
+      linewidth = 6,
+      colour = "#4472C4"
+    ) +
+    coord_cartesian(
+      xlim = c(region_start, region_end)
+    ) +
+    labs(y = "MACS3") +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.title.x = element_blank(),
+      axis.text.x = element_blank()
+    )
+  
+  # Track 3: aggregated fragment coverage
+  p_coverage <- ggplot(
+    coverage_df,
+    aes(x = position, y = coverage)
+  ) +
+    geom_area(
+      fill = "#8B5CF6",
+      alpha = 0.65
+    ) +
+    geom_line(
+      colour = "#6D28D9",
+      linewidth = 0.3
+    ) +
+    coord_cartesian(
+      xlim = c(region_start, region_end)
+    ) +
+    labs(
+      x = paste0(chr, " genomic position (bp)"),
+      y = "Fragment coverage"
+    ) +
+    theme_minimal()
+  
+  # Combine tracks
+  p_truth / p_called / p_coverage +
+    plot_layout(heights = c(1, 1, 3)) +
+    plot_annotation(
+      title = paste("Genomic example:", peak_name)
+    )
+}
+
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(IRanges)
+
+
+
+
+my_ggplot_theme <- function () 
+{
+  theme_light(base_size=10) +
+    theme(legend.key.size=unit(0.3, "cm"),
+          panel.background=element_rect(fill="white"),
+          axis.text.x=element_text(size=8),
+          axis.text.y=element_text(size=8),
+          axis.title=element_text(size=10),
+          legend.text=element_text(size=8),
+          legend.title=element_text(size=10),
+          text=element_text(size=10),
+          plot.title=element_text(size=12))
+}
+
+plot_genomic_region <- function(
+    chr,
+    region_start,
+    region_end,
+    results,
+    fragments
+) {
+  
+  stopifnot(
+    region_end > region_start,
+    region_start >= 0
+  )
+  
+  # BED-style coordinates: 0-based, half-open
+  chr <- if (grepl("^chr", chr)) chr else paste0("chr", chr)
+  
+  called <- results$called_results %>% ungroup()
+  truth <- results$truth_results %>% ungroup()
+  
+  # 1. Select simulated regulatory regions
+  truth_local <- truth %>%
+    filter(
+      peak_chr == chr,
+      peak_from < region_end,
+      peak_to > region_start
+    )
+  
+  # 2. Select all MACS3 peaks in the region
+  called_local <- called %>%
+    filter(
+      chrom == chr,
+      start < region_end,
+      end > region_start
+    ) %>%
+    mutate(
+      midpoint = (
+        pmax(start, region_start) +
+          pmin(end, region_end)
+      ) / 2
+    )
+  
+  # 3. Select sequenced fragments in the region
+  frags_local <- fragments %>%
+    filter(
+      fragment_chr == chr,
+      fragment_start < region_end,
+      fragment_end > region_start,
+      !is.na(fragment_type)
+    )
+  
+  # 4. Calculate coverage by fragment type
+  window_width <- as.integer(region_end - region_start)
+  
+  fragment_types <- unique(
+    as.character(frags_local$fragment_type)
+  )
+  
+  coverage_list <- lapply(fragment_types, function(type) {
+    
+    frags_type <- frags_local %>%
+      filter(fragment_type == type)
+    
+    frag_start <- pmax(
+      as.integer(frags_type$fragment_start),
+      region_start
+    )
+    
+    frag_end <- pmin(
+      as.integer(frags_type$fragment_end),
+      region_end
+    )
+    
+    valid <- frag_end > frag_start
+    coverage_values <- numeric(window_width)
+    
+    if (any(valid)) {
+      
+      ir <- IRanges::IRanges(
+        start = frag_start[valid] - region_start + 1L,
+        end = frag_end[valid] - region_start
+      )
+      
+      coverage_values <- as.numeric(
+        IRanges::coverage(
+          ir,
+          width = window_width
+        )
+      )
+    }
+    
+    data.frame(
+      position = seq.int(region_start, region_end - 1L),
+      coverage = coverage_values,
+      fragment_type = type
+    )
+  })
+  
+  coverage_df <- if (length(coverage_list) > 0) {
+    bind_rows(coverage_list)
+  } else {
+    data.frame(
+      position = seq.int(region_start, region_end - 1L),
+      coverage = 0,
+      fragment_type = "No fragments"
+    )
+  }
+  
+  # Consistent fragment type colours
+  fragment_colours <- c(
+    peak = "#8B5CF6",
+    background = "#BDBDBD"
+  )
+  
+  # Assign colours to any additional fragment types
+  extra_types <- setdiff(
+    unique(coverage_df$fragment_type),
+    names(fragment_colours)
+  )
+  
+  if (length(extra_types) > 0) {
+    extra_colours <- setNames(
+      grDevices::hcl.colors(
+        length(extra_types),
+        palette = "Dark 3"
+      ),
+      extra_types
+    )
+    
+    fragment_colours <- c(
+      fragment_colours,
+      extra_colours
+    )
+  }
+  
+  
+  # 6. Simulated regulatory regions
+  p_truth <- ggplot(truth_local) +
+    geom_segment(
+      aes(
+        x = peak_from,
+        xend = peak_to,
+        y = 1,
+        yend = 1
+      ),
+      linewidth = 5,
+      colour = "#3A9D7A"
+    ) +
+    coord_cartesian(
+      xlim = c(region_start, region_end),
+      ylim = c(0.5, 1.5),
+      expand = FALSE
+    ) +
+    labs(y = "Simulated regions",x="") +
+    my_ggplot_theme
+  
+  # 7. MACS3 peaks with labels
+  p_called <- ggplot(called_local) +
+    geom_segment(
+      aes(
+        x = start,
+        xend = end,
+        y = 1,
+        yend = 1
+      ),
+      linewidth = 6,
+      colour = "#4472C4"
+    ) +
+    geom_text(
+      aes(
+        x = midpoint,
+        y = 1.35,
+        label = name
+      ),
+      size = 3,
+      colour = "#1E3A8A",
+      check_overlap = TRUE
+    ) +
+    coord_cartesian(
+      xlim = c(region_start, region_end),
+      ylim = c(0.5, 1.7),
+      expand = FALSE
+    ) +
+    labs(y = "MACS3 peaks",x="") +
+    my_ggplot_theme
+  
+  # 8. Stacked fragment coverage
+  p_coverage <- ggplot(
+    coverage_df,
+    aes(
+      x = position,
+      y = coverage,
+      fill = fragment_type
+    )
+  ) +
+    geom_area(
+      position = "stack",
+      alpha = 0.85,
+      linewidth = 0
+    ) +
+    scale_fill_manual(
+      values = fragment_colours
+    ) +
+    coord_cartesian(
+      xlim = c(region_start, region_end),
+      expand = FALSE
+    ) +
+    facet_wrap(~fragment_type,ncol=1)+
+    scale_x_continuous(
+      labels = scales::label_comma()
+    ) +
+    labs(
+      x = paste0(chr, " genomic position (bp)"),
+      y = "Fragment coverage",
+      fill = "Fragment type"
+    ) +
+    my_ggplot_theme +
+    theme(
+      legend.position = "bottom"
+    )
+  
+  # 9. Combine tracks
+  p_truth / p_called / p_coverage +
+    plot_layout(
+      heights = c(1, 1.5, 3)
+    ) +
+    plot_annotation(
+      title = paste0(
+        chr, ":",
+        format(region_start, big.mark = ","),
+        "-",
+        format(region_end, big.mark = ",")
+      )
+    )
 }
