@@ -4,6 +4,8 @@ library(Matrix)
 library(markovchain)
 library(ComplexHeatmap)
 library(grid)
+library(ggraph)
+library(igraph)
 rztpois <- function(n, lambda) {
   x <- rpois(n, lambda)
   
@@ -1580,7 +1582,7 @@ plot_mutant_transition_graph <- function(
   rates_df <- sim$get_rates()
   # Keep only switching events
   edges <- rates_df %>%
-    filter(
+    dplyr::filter(
       mutant == mutant_name,
       event == "switch"
     ) %>%
@@ -1712,4 +1714,632 @@ df_to_phylo <- function(sample_forest, state_col = "epistate") {
   phy$states <- as.integer(factor(s))
   attr(phy$states, "levels") <- levels(factor(s))  # keeps the mapping, e.g. 1 = E1, 2 = E2
   phy
+}
+
+
+
+plot_forest_with_epistate <- function(
+    forest,
+    highlight_sample = NULL,
+    color_map = NULL,
+    alpha_function = NULL,
+    shape_label_function = sample_shape,
+    color_label_function = NULL,
+    
+    epistate_colors = c(
+      "P1" = "forestgreen",
+      "P2" = "goldenrod",
+      "P3" = "orchid2"
+    ),
+    
+    mutant_colors = c(
+      "G1" = "coral2",
+      "G2" = "turquoise4",
+      "G3" = "darkorange"
+    ),
+    
+    annotation_height = 0.35
+) {
+
+  
+  if (!inherits(forest, "Rcpp_SampleForest") &&
+      !inherits(forest, "Rcpp_PhylogeneticForest")) {
+    
+    stop('The parameter "forest" is not a ProCESS forest.')
+  }
+  
+  forest_data <- forest$get_nodes()
+  
+  if (is.null(color_label_function)) {
+    
+    forest_data <- forest_data %>%
+      ProCESS:::add_species_col("color_label")
+    
+    if (is.null(color_map)) {
+      color_map <- get_species_colors(forest)
+    }
+    
+  } else {
+    
+    if (is.null(color_map)) {
+      stop(
+        '"color_map" is mandatory when ',
+        '"color_label_function" is specified.'
+      )
+    }
+    
+    forest_data[["color_label"]] <-
+      color_label_function(forest_data)
+  }
+  
+  
+  forest_data$color_label <- factor(
+    forest_data$color_label,
+    levels = names(color_map)
+  )
+  
+  
+  
+  if (!is.null(shape_label_function)) {
+    
+    forest_data[["shape_label"]] <-
+      shape_label_function(forest_data)
+    
+  } else {
+    
+    forest_data[["shape_label"]] <- NA
+  }
+  
+  
+  
+  if (is.null(alpha_function)) {
+    
+    forest_data <- forest_data %>%
+      dplyr::mutate(
+        alpha_level = 1
+      )
+    
+  } else {
+    
+    forest_data <- forest_data %>%
+      dplyr::mutate(
+        alpha_level = alpha_function(.)
+      )
+  }
+  
+  
+  
+  if (nrow(forest_data) == 0) {
+    
+    warning("The forest does not contain any node")
+    
+    return(
+      ggplot2::ggplot()
+    )
+  }
+  
+  
+  
+  forest_data <- forest_data %>%
+    
+    dplyr::as_tibble() %>%
+    
+    dplyr::rename(
+      from = .data$ancestor,
+      to   = .data$cell_id
+    ) %>%
+    
+    dplyr::select(
+      .data$from,
+      .data$to,
+      .data$sample,
+      
+      # Keep both annotations
+      .data$epistate,
+      .data$mutant,
+      
+      .data$shape_label,
+      .data$color_label,
+      .data$birth_time,
+      .data$alpha_level
+    )
+  
+
+  first_cell <- forest_data %>%
+    dplyr::filter(
+      .data$birth_time == 0
+    )
+  
+  
+  # ==========================================================
+  # Add WT root
+  # ==========================================================
+  
+  forest_data <- forest_data %>%
+    
+    dplyr::add_row(
+      
+      from = NA,
+      to   = NA,
+      
+      color_label =
+        first_cell[1, ]$color_label,
+      
+      epistate =
+        first_cell[1, ]$epistate,
+      
+      mutant =
+        first_cell[1, ]$mutant,
+      
+      shape_label =
+        first_cell[1, ]$shape_label,
+      
+      birth_time = 0
+    ) %>%
+    
+    dplyr::mutate(
+      
+      from = ifelse(
+        is.na(.data$from),
+        "WT",
+        .data$from
+      ),
+      
+      to = ifelse(
+        is.na(.data$to),
+        "WT",
+        .data$to
+      ),
+      
+      sample = ifelse(
+        is.na(.data$sample),
+        "N/A",
+        as.character(.data$sample)
+      ),
+      
+      highlight = FALSE
+    )
+  
+  
+  # ==========================================================
+  # Highlight sample
+  # ==========================================================
+  
+  if (!is.null(highlight_sample)) {
+    
+    highlight <- ProCESS:::paths_to_sample(
+      forest_data,
+      highlight_sample
+    )
+    
+    forest_data$highlight <-
+      forest_data$to %in% highlight$to
+  }
+  
+  
+  # ==========================================================
+  # Edges
+  # ==========================================================
+  
+  edges <- forest_data %>%
+    dplyr::select(
+      "from",
+      "to",
+      "highlight"
+    )
+  
+  
+  # ==========================================================
+  # Graph
+  # ==========================================================
+  
+  graph <- tidygraph::as_tbl_graph(
+    edges,
+    directed = TRUE
+  )
+  
+  
+  # ==========================================================
+  # Add node information
+  # ==========================================================
+  
+  graph <- graph %>%
+    
+    tidygraph::activate("nodes") %>%
+    
+    dplyr::left_join(
+      
+      forest_data %>%
+        
+        dplyr::rename(
+          name = .data$to
+        ) %>%
+        
+        dplyr::mutate(
+          name = as.character(.data$name)
+        ),
+      
+      by = "name"
+    )
+  
+  
+  # ==========================================================
+  # Edge alpha
+  # ==========================================================
+  
+  graph <- graph %>%
+    
+    tidygraph::activate("edges") %>%
+    
+    dplyr::mutate(
+      edge_alpha =
+        tidygraph::.N()$alpha_level[to]
+    )
+  
+  
+  # ==========================================================
+  # Tree layout
+  # ==========================================================
+  
+  layout <- ggraph::create_layout(
+    graph,
+    layout = "tree",
+    root = "WT"
+  )
+  
+  
+  # ==========================================================
+  # Birth-time Y axis
+  # ==========================================================
+  
+  max_Y <- max(
+    layout$birth_time,
+    na.rm = TRUE
+  )
+  
+  layout$reversed_btime <-
+    max_Y - layout$birth_time
+  
+  layout$y <-
+    layout$reversed_btime
+  
+  
+  # ==========================================================
+  # Sample information
+  # ==========================================================
+  
+  samples_info <-
+    forest$get_samples_info()
+  
+  nsamples <-
+    nrow(samples_info)
+  
+  
+  # ==========================================================
+  # Point size
+  # ==========================================================
+  
+  point_size <- c(
+    0.5,
+    rep(1, nsamples)
+  )
+  
+  names(point_size) <- c(
+    "N/A",
+    samples_info %>%
+      dplyr::pull(.data$name)
+  )
+  
+  
+  # ==========================================================
+  # Axis
+  # ==========================================================
+  
+  labels_every <-
+    max_Y / 10
+  
+  
+  # ==========================================================
+  # SAME x limits for all three plots
+  # ==========================================================
+  
+  tree_xlim <-
+    range(layout$x, na.rm = TRUE) +
+    c(-0.5, 0.5)
+  
+  
+  # ==========================================================
+  # TREE
+  # ==========================================================
+  
+  graph_plot <- ggraph::ggraph(
+    layout,
+    "tree"
+  ) +
+    
+    ggraph::geom_edge_link(
+      
+      edge_width = 0.1,
+      
+      ggplot2::aes(
+        
+        edge_color = ifelse(
+          highlight,
+          "indianred3",
+          "black"
+        ),
+        
+        alpha = .data$edge_alpha
+      )
+    )
+  
+  
+  # ==========================================================
+  # Nodes
+  # ==========================================================
+  
+  if (is.null(shape_label_function)) {
+    
+    graph_plot <- graph_plot +
+      
+      ggraph::geom_node_point(
+        
+        ggplot2::aes(
+          color = .data$color_label,
+          alpha = .data$alpha_level,
+          size = .data$sample
+        )
+      )
+    
+  } else {
+    
+    graph_plot <- graph_plot +
+      
+      ggraph::geom_node_point(
+        
+        ggplot2::aes(
+          color = .data$color_label,
+          shape = .data$shape_label,
+          alpha = .data$alpha_level,
+          size = .data$sample
+        )
+      ) +
+      
+      ggplot2::scale_shape_manual(
+        values = c(
+          0:nsamples + 1
+        )
+      )
+  }
+  
+  
+  # ==========================================================
+  # Finish tree
+  # ==========================================================
+  
+  graph_plot <- graph_plot +
+    
+    ggplot2::scale_alpha_identity() +
+    
+    ggplot2::scale_color_manual(
+      values = color_map
+    ) +
+    
+    ggplot2::scale_size_manual(
+      values = point_size
+    ) +
+    
+    ggplot2::scale_x_continuous(
+      limits = tree_xlim,
+      expand = c(0, 0)
+    ) +
+    
+    ggplot2::scale_y_continuous(
+      
+      labels = seq(
+        0,
+        max_Y,
+        labels_every
+      ) %>%
+        round() %>%
+        rev(),
+      
+      breaks = seq(
+        0,
+        max_Y,
+        labels_every
+      ) %>%
+        round()
+    ) +
+    
+    ggplot2::theme_minimal() +
+    
+    ggplot2::theme(
+      
+      legend.position = "none",
+      
+      axis.line.x =
+        ggplot2::element_blank(),
+      
+      axis.text.x =
+        ggplot2::element_blank(),
+      
+      axis.ticks.x =
+        ggplot2::element_blank(),
+      
+      plot.margin =
+        ggplot2::margin(
+          5, 5, 0, 5
+        )
+    ) +
+    
+    ggplot2::labs(
+      color = NULL,
+      shape = NULL,
+      x = NULL,
+      y = "Time"
+    ) +
+    
+    ggplot2::guides(
+      size = "none",
+      shape = NULL,
+      color = NULL
+    )
+  
+  
+  # ==========================================================
+  # ANNOTATION DATA
+  #
+  # SAME data/order for BOTH annotation bars
+  # ==========================================================
+  
+  annotation_data <- layout %>%
+    
+    as.data.frame() %>%
+    
+    dplyr::filter(
+      !is.na(.data$sample),
+      .data$sample != "N/A"
+    ) %>%
+    
+    dplyr::arrange(.data$x)
+  
+  
+  # ==========================================================
+  # EPISTATE BAR
+  # ==========================================================
+  if (!is.null(epistate_colors)){
+    annotation_plot_epi <- ggplot2::ggplot(
+      
+      annotation_data,
+      
+      ggplot2::aes(
+        x = .data$x,
+        y = 1,
+        fill = .data$epistate
+      )
+      
+    ) +
+      
+      ggplot2::geom_tile(
+        width = 1,
+        height = 1
+      ) +
+      
+      ggplot2::scale_fill_manual(
+        values = epistate_colors,
+        drop = FALSE
+      ) +
+      
+      ggplot2::scale_x_continuous(
+        limits = tree_xlim,
+        expand = c(0, 0)
+      ) +
+      
+      ggplot2::scale_y_continuous(
+        expand = c(0, 0)
+      ) +
+      
+      ggplot2::theme_void() +
+      
+      ggplot2::theme(
+        legend.position = "none",
+        plot.margin = ggplot2::margin(
+          0, 5, 1, 5
+        )
+      )
+  } else {
+    annotation_plot_epi <- ggplot()
+  }
+  
+  
+  
+  # ==========================================================
+  # MUTANT / GENOTYPE BAR
+  # ==========================================================
+  if (!is.null(mutant_colors)){
+    annotation_plot_geno <- ggplot2::ggplot(
+      
+      annotation_data,
+      
+      ggplot2::aes(
+        x = .data$x,
+        y = 1,
+        fill = .data$mutant
+      )
+      
+    ) +
+      
+      ggplot2::geom_tile(
+        width = 1,
+        height = 1
+      ) +
+      
+      ggplot2::scale_fill_manual(
+        values = mutant_colors,
+        drop = FALSE
+      ) +
+      
+      ggplot2::scale_x_continuous(
+        limits = tree_xlim,
+        expand = c(0, 0)
+      ) +
+      
+      ggplot2::scale_y_continuous(
+        expand = c(0, 0)
+      ) +
+      
+      ggplot2::theme_void() +
+      
+      ggplot2::theme(
+        legend.position = "none",
+        plot.margin = ggplot2::margin(
+          1, 5, 5, 5
+        )
+      )
+  } else {
+    annotation_plot_geno <- ggplot()
+  }
+  
+  
+  # ==========================================================
+  # COMBINE
+  #
+  # tree
+  # epistate
+  # genotype
+  # ==========================================================
+  
+  final_plot <-
+    
+    graph_plot /
+    
+    annotation_plot_epi /
+    
+    annotation_plot_geno +
+    
+    patchwork::plot_layout(
+      heights = c(
+        10,
+        annotation_height,
+        annotation_height
+      )
+    )
+  
+  
+  return(final_plot)
+}
+
+my_ggplot_theme <- function () 
+{
+  theme_light(base_size=10) +
+    theme(legend.key.size=unit(0.3, "cm"),
+          panel.background=element_rect(fill="white"),
+          axis.text.x=element_text(size=8),
+          axis.text.y=element_text(size=8),
+          axis.title=element_text(size=10),
+          legend.text=element_text(size=8),
+          legend.title=element_text(size=10),
+          text=element_text(size=10),
+          plot.title=element_text(size=12))
 }
