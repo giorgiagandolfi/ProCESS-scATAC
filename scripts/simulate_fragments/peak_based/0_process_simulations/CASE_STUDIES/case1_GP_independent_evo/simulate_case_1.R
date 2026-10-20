@@ -92,7 +92,7 @@ p_forest_gen <- plot_forest(sample_forest, color_map=colors$mutant) +
 
 p_evo <- wrap_plots(list=list(p_forest_gen,p_forest_epi,sankey_gen,sankey_epi),design = "aabb\naabb\nccdd") +
   plot_annotation(tag_levels = "a")
-
+saveRDS(object = sample_summary,file = "results/proportions.rds")
 
 p_tran_mat <- wrap_plots(list=list(q_G1$plot_q,q_G2$plot_q,q_G3$plot_q))+
   plot_annotation(tag_levels = "a")

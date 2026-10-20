@@ -1,14 +1,27 @@
 # Utility functions for the ProCESS repeated-treatment / epigenetic-memory simulation
 
 get_state_counts <- function(sim, phase, treatment_number = NA_integer_) {
+  
+  # Get all possible epigenetic states
+  phenotypes <- sim$get_epigenetic_states() %>%
+    dplyr::pull(epistate)
+  
+  # Get current cells
   cells <- sim$get_cells()
-
+  
   cells |>
     dplyr::count(epistate, name = "n") |>
-    tidyr::complete(epistate = c("P1", "P2"), fill = list(n = 0L)) |>
+    tidyr::complete(
+      epistate = phenotypes,
+      fill = list(n = 0L)
+    ) |>
     dplyr::mutate(
       total_cells = sum(n),
-      prop = dplyr::if_else(total_cells > 0, n / total_cells, 0),
+      prop = dplyr::if_else(
+        total_cells > 0,
+        n / total_cells,
+        0
+      ),
       time = as.numeric(sim$get_clock()),
       phase = phase,
       treatment = treatment_number
@@ -28,6 +41,143 @@ run_and_record <- function(sim, end_time, phase, treatment_number = NA_integer_,
     sim$run_up_to_time(t)
     get_state_counts(sim, phase, treatment_number)
   })
+}
+
+# run_and_record_size <- function(
+#     sim,
+#     end_size,
+#     phase,
+#     treatment_number = NA_integer_,
+#     step = 250
+# ) {
+#   
+#   # Current population size
+#   start_size <- sum(sim$get_counts()$counts)
+#   
+#   # Check target
+#   if (end_size <= start_size) {
+#     stop(
+#       paste0(
+#         "end_size (", end_size,
+#         ") must be greater than the current population size (",
+#         start_size, ")."
+#       )
+#     )
+#   }
+# 
+#   
+#   recording_sizes <- seq(
+#     from = start_size + step,
+#     to   = end_size,
+#     by   = step
+#   )
+# 
+#   if (length(recording_sizes) == 0 ||
+#       tail(recording_sizes, 1) != end_size) {
+#     
+#     recording_sizes <- c(
+#       recording_sizes,
+#       end_size
+#     )
+#   }
+# 
+  # phenotypes <- sim$get_epigenetic_states() %>% pull(epistate)
+  # genotypes <- sim$get_mutants() %>% pull(mutant)
+  # va <- list()
+  # 
+  # for (g in genotypes) {
+  #   for (p in phenotypes) {
+  # 
+  #     name <- paste0(g, "[", p, "]")
+  # 
+  #     va[[name]] <- sim$var(name)
+  #   }
+  # }
+#   
+#   
+#   results <- lapply(
+#     recording_sizes,
+#     function(target_size) {
+#       print(target_size)
+#       c2 <- Reduce(`+`, va) == target_size
+#       sim$run_until(c2)
+#       
+#       out <- get_state_counts(
+#         sim,
+#         phase,
+#         treatment_number
+#       )
+#       out$time <- sim$get_clock()
+#       out$total_size <- sum(sim$get_counts()$counts)
+#       out$target_size <- target_size
+#       
+#       out
+#     }
+#   )
+#   
+#   dplyr::bind_rows(results)
+# }
+
+
+run_and_record_size <- function(
+    sim,
+    end_size,
+    phase,
+    condition_fun,
+    treatment_number = NA_integer_,
+    step = 250
+) {
+  
+  # --------------------------------------------------
+  # Recording targets
+  # --------------------------------------------------
+  
+  recording_sizes <- seq(
+    from = step,
+    to = end_size,
+    by = step
+  )
+  
+  if (length(recording_sizes) == 0 ||
+      tail(recording_sizes, 1) != end_size) {
+    recording_sizes <- c(recording_sizes, end_size)
+  }
+  
+  # --------------------------------------------------
+  # Run simulation
+  # --------------------------------------------------
+  
+  results <- lapply(
+    recording_sizes,
+    function(target_size) {
+      
+      print(target_size)
+      
+      # Build stopping condition
+      condition <- condition_fun(
+        sim = sim,
+        target_size = target_size
+      )
+      
+      # Run until condition is reached
+      sim$run_until(condition)
+      
+      # Record state
+      out <- get_state_counts(
+        sim,
+        phase,
+        treatment_number
+      )
+      
+      out$time <- as.numeric(sim$get_clock())
+      out$total_size <- sum(sim$get_counts()$counts)
+      out$target_size <- target_size
+      
+      out
+    }
+  )
+  
+  dplyr::bind_rows(results)
 }
 
 sample_tissue_plot <- function(sim, sample_name, state_colors, n_w = 25, n_h = 25,

@@ -9,8 +9,8 @@ suppressPackageStartupMessages({
   library(patchwork)
   library(scales)
 })
-setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC_project/ProCESS-scATAC/scripts/simulate_fragments/peak_based/0_process_simulations/process_epigenetic_memory")
-prj_dir <- "/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC_project/ProCESS-scATAC/scripts/simulate_fragments/peak_based/0_process_simulations/process_epigenetic_memory"
+setwd("/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC_project/ProCESS-scATAC/scripts/simulate_fragments/peak_based/0_process_simulations/CASE_STUDIES/case4_epigenetic_memory/")
+prj_dir <- "/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC_project/ProCESS-scATAC/scripts/simulate_fragments/peak_based/0_process_simulations/CASE_STUDIES/case4_epigenetic_memory/"
 
 source("utils_epigenetic_memory.R")
 set.seed(0)

@@ -27,7 +27,7 @@ sim <- TissueSimulation(
   epigenetic_states = c("P1", "P2", "P3"),
   width = 1000, height = 1000,
   save_directory = TRUE,
-  name = "case2"
+  name = "case2_new"
 )
 sim$death_activation_level <- 50
 
@@ -84,8 +84,8 @@ p_G3_origin <- plot_tissue(sim) +
 sim$mutate_progeny(start_G3, "G3")
 sim$set_rates(list("G2" = list(duplication=.4, death=.2)))
 sim$set_rates(list("G1" = list(duplication=.2, death=.4)))
-sim$run_up_to_time(60)
-p_final_tissue <- plot_tissue(sim) + ggtitle("Final tissue, t = 60")
+sim$run_up_to_time(80)
+p_final_tissue <- plot_tissue(sim) + ggtitle("Final tissue, t = 80")
 
 # -----------------------------------------------------------------------------
 # 3. Spatial sample and forest
@@ -115,6 +115,7 @@ p_forest_gen <- plot_forest(sample_forest, color_map=colors$mutant) +
 
 p_evo <- wrap_plots(list=list(p_forest_gen,p_forest_epi,sankey_gen,sankey_epi),design = "aabb\naabb\nccdd") +
   plot_annotation(tag_levels = "a")
+saveRDS(object = sample_summary,file = "results/proportions.rds")
 
 
 p_tran_mat <- wrap_plots(list=list(q_G1$plot_q,q_G2$plot_q,q_G3$plot_q))+
