@@ -12,7 +12,7 @@ colnames(called_peaks) <- c(
 
 frags_peak_mapping_files <- list.files(".",pattern = "_peaks_fragment_mapping.txt") 
 #strsplit("cell_1812891_peaks_fragment_mapping.txt cell_1287988_peaks_fragment_mapping.txt", " ")[[1]]
-simulated_frags_files <- list.files(".",pattern = "fragments_cell_id_") 
+simulated_frags_files <- list.files("results_case5_clones/process_simulation/",pattern = "fragments_cell_id_") 
 #strsplit("fragments_cell_id_1812891.rds fragments_cell_id_1287988.rds", " ")[[1]]
 
 sequenced_peaks_list<-list()

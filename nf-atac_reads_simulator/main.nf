@@ -17,8 +17,13 @@ include { SAMTOOLS_MERGE }           from "./modules/bam_merge/main.nf"
 include { SINTO_FRAGMENTS }          from "./modules/call_fragments/main.nf"
 include { SORT_FRAGMENTS }           from "./modules/sort_fragments/main.nf"
 include { CALL_PEAKS }               from "./modules/call_peaks/main.nf"
+include { CALL_PEAKS_GENRICH }       from "./modules/call_peaks_genrich/main.nf"
+include { SORT_BAM_BY_NAME }         from "./modules/sort_by_name/main.nf"  
+include { CALL_PEAKS_HOMER }         from "./modules/call_peaks_homer/main.nf"
+include { CALL_PEAKS_HMMRATAC }       from "./modules/call_peaks_hmmratac/main.nf"
 // GENERAL BENCHMARKING
 include { BENCHMARK_PEAKS }               from "./modules/benchmark_peaks/main.nf"
+include { BENCHMARK_FRAGMENTS }               from "./modules/benchmark_fragments/main.nf"
 
 workflow {
 
@@ -103,12 +108,35 @@ workflow {
             .groupTuple()
     }
 
+    // One forest per sample; verify that all cells agree on its path
+    ch_sample_forests = ch_cells
+        .map { meta, sample_forest, phylo_forest ->
+            tuple(meta.sample_id, sample_forest)
+        }
+        .groupTuple()
+        .map { sample_id, forests ->
+            def unique_forests = forests.unique()
+    
+            if (unique_forests.size() != 1) {
+                error "Sample ${sample_id} has multiple sample forest paths: ${unique_forests}"
+            }
+    
+            tuple(sample_id, unique_forests[0])
+        }
     SAMTOOLS_MERGE(ch_bams_grouped)
 
     SINTO_FRAGMENTS(SAMTOOLS_MERGE.out.merged_bam)
     SORT_FRAGMENTS(SINTO_FRAGMENTS.out.frag_bed)
 
+    
     CALL_PEAKS(SAMTOOLS_MERGE.out.merged_bam)
+    SORT_BAM_BY_NAME(SAMTOOLS_MERGE.out.merged_bam)
+
+    CALL_PEAKS_GENRICH(
+        SORT_BAM_BY_NAME.out.bam
+    )
+    // CALL_PEAKS_HMMRATAC(SAMTOOLS_MERGE.out.merged_bam)
+    // CALL_PEAKS_HOMER(SAMTOOLS_MERGE.out.merged_bam)
     
     // Group per-cell RDS files by sample_id
     ch_frags_rds_grouped = PROCESS_SIMULATE_FRAGMENT.out.all_fragments_rds
@@ -126,8 +154,45 @@ workflow {
     ch_aggregate_input = CALL_PEAKS.out.peak
         .join(ch_peaks_txt_grouped)
         .join(ch_frags_rds_grouped)
+        // Use sample_id as the forest join key
+        .map { meta, peaks_file, peak_mappings, fragments_rds ->
+            tuple(
+                meta.sample_id,
+                meta,
+                peaks_file,
+                peak_mappings,
+                fragments_rds
+            )
+        }
+        .join(
+            ch_sample_forests,
+            failOnDuplicate: true,
+            failOnMismatch: true
+        )
+        .map {
+            sample_id, meta, peaks_file, peak_mappings,
+            fragments_rds, sample_forest ->
+    
+            tuple(
+                meta,
+                peaks_file,
+                peak_mappings,
+                fragments_rds,
+                sample_forest
+            )
+        }
+    
 
+        
+    ch_aggregate_input_bp = SORT_FRAGMENTS.out.frag_gz
+        .join(ch_frags_rds_grouped)
+        
     // Shape: [ [sample_id: X], peaks_file, [rds1, rds2, ...] ]
     ch_aggregate_input.view()
-    BENCHMARK_PEAKS(ch_aggregate_input)
+    BENCHMARK_PEAKS(
+        ch_aggregate_input,
+        ch_accessibility_score,
+        ch_peak_file
+    )
+    BENCHMARK_FRAGMENTS(ch_aggregate_input_bp)
 }

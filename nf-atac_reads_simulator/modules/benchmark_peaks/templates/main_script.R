@@ -3,6 +3,8 @@ library(GenomicRanges)
 library(rtracklayer)
 library(dplyr)
 library(ggplot2)
+# library(ProCESS)
+library(tidyr)
 
 source("${projectDir}/bin/utils.R")
 called_peaks <- read.table("${peaks}", header = FALSE, sep = "\\t")
@@ -15,6 +17,35 @@ frags_peak_mapping_files <- strsplit("${cell_peak_txt_files}", " ")[[1]]
 simulated_frags_files <- strsplit("${cell_frags_rds_files}", " ")[[1]]
 
 
+a_score <- readRDS("${activity_list_file}")
+activity_df <- convert_activity_list(a_score)
+gene_rr <- readRDS("${peak_list_file}")
+gene_rr_df <- do.call("rbind",gene_rr)
+gene_rr_df_wt_activity <- left_join(gene_rr_df,activity_df,relationship = "many-to-many")
+
+# sample_forest <- load_sample_forest("${sample_forest}")
+# tot_cells <-sample_forest\$get_samples_info() %>% 
+#   dplyr::filter(name=="${meta.sample_id}") %>% 
+#   dplyr::pull(tumour_cells)
+# sample_forest_phenoptype_prop <- sample_forest\$get_nodes() %>% 
+#   dplyr::filter(sample=="${meta.sample_id}") %>% 
+#   dplyr::rename(phenotype=epistate) %>% 
+#   dplyr::group_by(phenotype) %>% 
+#   dplyr::summarise(prop_cells=n()/tot_cells)
+# 
+# peak_scores <- gene_rr_df_wt_activity %>% 
+#   left_join(sample_forest_phenoptype_prop) %>% 
+#   group_by(peak, chr, from, to) %>%
+#   summarise(
+#     recovery_score = sum(activity * prop_cells),
+#     .groups = "drop"
+#   )
+peak_scores <- gene_rr_df_wt_activity %>% 
+  group_by(peak, chr, from, to) %>%
+  summarise(
+    recovery_score = mean(activity),
+    .groups = "drop"
+  )
 
 sequenced_peaks_list<-list()
 for (i in 1:length(simulated_frags_files)){
@@ -36,6 +67,18 @@ for (i in 1:length(simulated_frags_files)){
   print(i)
 }
 
+background_sequenced_fragments <-list()
+for (i in 1:length(simulated_frags_files)){
+  sequenced_frags = readRDS(simulated_frags_files[i])
+  sequenced_frags = sequenced_frags %>% 
+    dplyr::mutate(fragment_start=round(fragment_start,0)) %>% 
+    dplyr::mutate(fragment_end=round(fragment_end,0))
+  background_sequenced_fragments[[i]] = sequenced_frags %>% 
+    dplyr::filter(sequenced==1) %>% 
+    dplyr::filter(fragment_type=='background')
+  print(i)
+}
+background_sequenced_fragments_df <- do.call('rbind',background_sequenced_fragments)
 sequenced_peaks_df <- do.call('rbind',sequenced_peaks_list)
 tot_cells = length(frags_peak_mapping_files)
 sequenced_peaks_df <- sequenced_peaks_df %>%
@@ -48,7 +91,8 @@ sequenced_peaks_df <- sequenced_peaks_df %>%
   ) %>%
   mutate(
     pct_cells = n_cells / tot_cells
-  )
+  ) %>% 
+  inner_join(peak_scores)
 
 results <- evaluate_peaks_extended(
   truth = sequenced_peaks_df,
@@ -82,9 +126,11 @@ recovery_by_fragments <- truth_df %>%
 
 p1 <- ggplot(
   recovery_by_fragments,
-  aes(x = fragment_bin, y = recovery)
+  aes(x = fragment_bin, y = recovery,group = 1)
 ) +
   geom_col(fill = "#4472C4") +
+  geom_point(size = 2)+
+  geom_line(linewidth = 1)+
   geom_text(
     aes(label = paste0("n=", n_regions)),
     vjust = -0.3,
@@ -118,8 +164,9 @@ recovery_by_cells <- truth_df %>%
 
 p2 <- ggplot(
   recovery_by_cells,
-  aes(x = prevalence_bin, y = recovery)
-) +
+  aes(x = prevalence_bin, y = recovery,group = 1))+
+  geom_point(size = 2)+
+  geom_line(linewidth = 1)+
   geom_col(fill = "#3A9D7A") +
   scale_y_continuous(
     labels = scales::percent,
@@ -134,8 +181,45 @@ p2 <- ggplot(
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
+
+####
+recovery_by_score <- truth_df %>%
+  mutate(
+    recovery_score_bin = cut(
+      recovery_score,
+      breaks = seq(0, 2, by = 0.2),
+      include.lowest = TRUE
+    )
+  ) %>%
+  group_by(recovery_score_bin) %>%
+  summarise(
+    n_regions = n(),
+    recovery = mean(recovered),
+    .groups = "drop"
+  )
+
+p2.0 <- ggplot(
+  recovery_by_score,
+  aes(x = recovery_score_bin, y = recovery,group = 1)
+) +
+  geom_col(fill = "darkorange2") +
+  geom_point(size = 2)+
+  geom_line(linewidth = 1)+
+  scale_y_continuous(
+    labels = scales::percent,
+    limits = c(0, 1)
+  ) +
+  labs(
+    x = "Fraction of cells with sequenced fragments",
+    y = "Recovery rate",
+    title = "Regulatory-region recovery by cell prevalence"
+  ) +
+  my_ggplot_theme()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 # MACS3 peak widths and merging
-called_df <- results$called_results %>%
+called_df <- results\$called_results %>%
   ungroup() %>%
   mutate(
     peak_width = end - start,
@@ -180,7 +264,7 @@ p4 <- called_df %>%
   my_ggplot_theme()
 
 ### general stats
-metrics_long <- results$metrics %>%
+metrics_long <- results\$metrics %>%
   dplyr::select(precision, recall, f1, jaccard) %>%
   pivot_longer(
     cols = everything(),
@@ -208,50 +292,174 @@ p0 <- ggplot(metrics_long, aes(x = Metric, y = Value, fill = Metric)) +
   ) +
   labs(
     title = "MACS3 peak-calling performance",
-    subtitle = "Sample S3",
+    subtitle = paste0("Sample ","${meta.sample_id}"),
     x = NULL,
     y = "Metric value"
   ) +
   my_ggplot_theme()
-# 
-# ## Plot an example peak with simulated regions and sequenced fragments
-# sequenced_fragments_list <- list()
-# 
-# for (i in seq_along(simulated_frags_files)) {
-#   
-#   frags <- readRDS(simulated_frags_files[i])
-#   sequenced_fragments_list[[i]] <- frags %>%
-#     filter(sequenced == 1) %>%
-#     transmute(
-#       cell_id = sub("fragments_cell_id_(\\d+)\\.rds", "\\1", simulated_frags_files[i]),
-#       fragment_chr = as.character(fragment_chr),
-#       fragment_start = as.integer(round(fragment_start)),
-#       fragment_end = as.integer(round(fragment_end)),
-#       fragment_type
-#     )
-# }
-# 
-# sequenced_fragments_df <- bind_rows(
-#   sequenced_fragments_list
-# ) %>%
-#   mutate(
-#     fragment_chr = ifelse(
-#       grepl("^chr", fragment_chr),
-#       fragment_chr,
-#       paste0("chr", fragment_chr)
-#     )
-#   )
-# 
-# 
-# p5 <- plot_peak_example(
-#   peak_name = "S3_peak_2",
-#   results = results,
-#   fragments = sequenced_fragments_df,
-#   flank = 300
-# )
-final_plot <- wrap_plots(list(p0,p1,p2,p3,p4),design = "aabbcc\ndddeee")
+##### false positive peaks
+fp <- results\$fp_peaks %>%
+  ungroup()
+
+background <- background_sequenced_fragments_df %>%
+  ungroup() %>%
+  dplyr::filter(
+    sequenced == 1,
+    fragment_type == "background"
+  ) %>% 
+  arrange(
+    match(
+      sub("^chr", "", as.character(fragment_chr)),
+      c(as.character(1:22), "X", "Y", "M", "MT")
+    ),
+    fragment_start,
+    fragment_end
+  )
+
+harmonise_chr <- function(x) {
+  x <- as.character(x)
+  ifelse(grepl("^chr", x), x, paste0("chr", x))
+}
+
+# Called peaks: BED coordinates -> GRanges
+fp_gr <- GRanges(
+  seqnames = harmonise_chr(fp\$chrom),
+  ranges = IRanges(
+    start = fp\$start + 1L,
+    end = fp\$end
+  )
+)
+
+# Background fragments: assumed 1-based, inclusive
+background_gr <- GRanges(
+  seqnames = harmonise_chr(background\$fragment_chr),
+  ranges = IRanges(
+    start = background\$fragment_start,
+    end = background\$fragment_end
+  )
+)
+all_chr <- union(
+  GenomeInfoDb::seqlevels(fp_gr),
+  GenomeInfoDb::seqlevels(background_gr)
+)
+
+GenomeInfoDb::seqlevels(fp_gr) <- all_chr
+GenomeInfoDb::seqlevels(background_gr) <- all_chr
+
+hits <- findOverlaps(
+  query = fp_gr,
+  subject = background_gr,
+  minoverlap = 10L,
+  ignore.strand = TRUE
+)
+
+# One row per FP peak, including peaks with no background overlap
+fp_background_results <- fp %>%
+  mutate(
+    n_background_fragments = tabulate(
+      S4Vectors::queryHits(hits),
+      nbins = nrow(fp)
+    ),
+    overlaps_background = n_background_fragments > 0L,
+    background_overlap = factor(
+      if_else(
+        overlaps_background,
+        "Overlaps background",
+        "No background overlap"
+      ),
+      levels = c("No background overlap", "Overlaps background")
+    )
+  )
+
+# Summary
+fp_background_summary <- fp_background_results %>%
+  count(background_overlap, name = "n_peaks", .drop = FALSE) %>%
+  mutate(
+    fraction = if (sum(n_peaks) > 0L) {
+      n_peaks / sum(n_peaks)
+    } else {
+      NA_real_
+    }
+  )
+p5 <- ggplot(
+  fp_background_summary,
+  aes(x = background_overlap, y = fraction, fill = background_overlap)
+) +
+  geom_col(width = 0.65) +
+  geom_text(
+    aes(
+      label = if_else(
+        is.na(fraction),
+        "No FP peaks",
+        paste0(
+          scales::percent(fraction, accuracy = 0.1),
+          "\n(n = ", n_peaks, ")"
+        )
+      )
+    ),
+    vjust = -0.3,
+    size = 4
+  ) +
+  scale_fill_manual(
+    values = c(
+      "No background overlap" = "#B8BEC6",
+      "Overlaps background" = "#3A9D7A"
+    ),
+    guide = "none"
+  ) +
+  scale_y_continuous(
+    labels = scales::percent,
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.15))
+  ) +
+  labs(
+    x = NULL,
+    y = "Fraction of false-positive peaks",
+    title = "Background-fragment overlap with false-positive peaks",
+    subtitle = "Overlap requires at least 10 shared base pair"
+  ) +
+  my_ggplot_theme()
+
+# Include peaks with zero matching fragments
+fragment_count_summary <- fp_background_results %>%
+  count(n_background_fragments, name = "n_fp_peaks")
+
+p6 <- ggplot(
+  fragment_count_summary,
+  aes(x = n_background_fragments, y = n_fp_peaks)
+) +
+  geom_col(width = 0.8, fill = "#3A9D7A") +
+  scale_x_continuous(
+    breaks = scales::breaks_pretty(),
+    minor_breaks = NULL
+  ) +
+  scale_y_continuous(
+    breaks = scales::breaks_pretty(),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    x = "Number of overlapping background fragments per FP peak",
+    y = "Number of false-positive peaks",
+    title = "Background-fragment overlap per false-positive peak",
+    subtitle = "Overlap requires at least 10 shared base pair"
+  ) +
+  my_ggplot_theme()
+
+
+
+# Store all plots in a named list
+final_plots <- list(
+  p0 = p0,
+  p1 = p1,
+  p2 = p2,
+  p2.0 = p2.0,
+  p3 = p3,
+  p4 = p4,
+  p5 = p5,
+  p6=p6
+)
 
 
 saveRDS(object = results,file = paste0("${meta.sample_id}","_metrics.rds"))
-ggsave(filename = paste0("${meta.sample_id}","_metrics_plot.pdf"),plot = final_plot,width = 10,height = 5)
+saveRDS(object = final_plots,file = paste0("${meta.sample_id}","_metrics_plots.rds"))
 

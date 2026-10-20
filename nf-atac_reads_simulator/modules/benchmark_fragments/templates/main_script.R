@@ -4,24 +4,14 @@ library(rtracklayer)
 library(dplyr)
 library(ggplot2)
 library(data.table)
+library(tidyr)
 
 
 source("${projectDir}/bin/utils.R")
 
-# called_fragments <- fread(
-#   # "${fragments}",
-#   "/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC_project/analysis/results_case2_genes_5pathways_low_variability/fragment_calling/S3/fragments.chr.tsv.gz",
-#   header = FALSE,
-#   col.names = c("chrom", "start", "end", "cell_id", "count")
-# ) %>%
-#   mutate(
-#     cell_id = as.character(cell_id),
-#     chrom = as.character(chrom),
-#     start = as.integer(start),
-#     end = as.integer(end)
-#   )
 
-output_dir <- "fragment_benchmark"
+
+
 min_overlap_bp <- 10L
 min_overlap_fraction <- 0.50
 truth_start_shift <- 0L
@@ -29,18 +19,12 @@ truth_end_shift <- 0L
 length_breaks <- c(0, 50, 100, 150, 200, 300, 500, Inf)
 length_labels <- c("<=50", "51-100", "101-150", "151-200", "201-300", "301-500", ">500")
 
-if (file.exists(file.path(project_dir, "bin/utils.R"))) {
-  source(file.path(project_dir, "bin/utils.R"))
-}
-if (!exists("my_ggplot_theme", mode = "function")) {
-  my_ggplot_theme <- function() theme_classic(base_size = 12)
-}
+
 
 
 # ---- 2. Load called fragments --------------------------------------------
-called_file <- "/orfeo/cephfs/scratch/cdslab/ggandolfi/Github/scATAC_project/analysis/results_case2_genes_5pathways_low_variability/fragment_calling/S3/fragments.chr.tsv.gz"
-stopifnot(file.exists(called_file))
-called_fragments <- fread(called_file, header = FALSE,
+
+called_fragments <- fread("${fragments}", header = FALSE,
                           col.names = c("chrom", "start", "end", "cell_id", "count"))
 called <- called_fragments %>%
   transmute(cell_id = as.character(cell_id),
@@ -51,13 +35,22 @@ called <- called_fragments %>%
          end > start, start >= 0)
 
 # ---- 3. Load post-dropout simulated fragments -----------------------------
-stopifnot(length(simulated_frags_files) > 0,
-          all(file.exists(simulated_frags_files)))
-sequenced_fragments_list <- vector("list", length(simulated_frags_files))
+simulated_frags_files <- strsplit("${cell_frags_rds_files}", " ")[[1]]
+sequenced_fragments_list <- list()
+
 for (i in seq_along(simulated_frags_files)) {
   file <- simulated_frags_files[i]
-  id <- sub("^fragments_cell_id_([0-9]+)\\.rds$", "\\1", basename(file))
-  if (!grepl("^[0-9]+$", id)) stop("Cannot parse cell ID: ", file)
+  filename <- basename(file)
+  
+  if (!grepl("^fragments_cell_id_[0-9]+[.]rds\$", filename)) {
+    stop("Cannot parse cell ID: ", file)
+  }
+  
+  id <- strsplit(
+    sub("^fragments_cell_id_", "", sub("[.]rds\$", "", filename)),
+    "_"
+  )[[1]][1]
+  if (!grepl("^[0-9]+\$", id)) stop("Cannot parse cell ID: ", file)
   frags <- readRDS(file)
   sequenced_fragments_list[[i]] <- frags %>%
     filter(sequenced == 1) %>%
@@ -66,8 +59,10 @@ for (i in seq_along(simulated_frags_files)) {
               start = as.integer(round(fragment_start)) + truth_start_shift,
               end = as.integer(round(fragment_end)) + truth_end_shift,
               fragment_type = as.character(fragment_type))
+  print(i)
 }
 truth_fragments <- bind_rows(sequenced_fragments_list)
+
 truth <- truth_fragments %>%
   mutate(chrom = if_else(grepl("^chr", chrom), chrom, paste0("chr", chrom))) %>%
   filter(!is.na(cell_id), !is.na(chrom), !is.na(start), !is.na(end),
@@ -88,12 +83,12 @@ cat("Truth unique fragments:", nrow(truth), "\nCalled unique fragments:", nrow(c
 # ---- 4. Candidate overlaps ------------------------------------------------
 # Both datasets assumed BED-like: 0-based, half-open [start, end).
 # Preserve global row indices
-truth$truth_idx <- seq_len(nrow(truth))
-called$called_idx <- seq_len(nrow(called))
+truth\$truth_idx <- seq_len(nrow(truth))
+called\$called_idx <- seq_len(nrow(called))
 
 # Split by cell
-truth_by_cell <- split(truth, truth$cell_id)
-called_by_cell <- split(called, called$cell_id)
+truth_by_cell <- split(truth, truth\$cell_id)
+called_by_cell <- split(called, called\$cell_id)
 
 # Only cells present in both datasets can have matches
 common_cells <- intersect(
@@ -111,18 +106,18 @@ for (i in seq_along(common_cells)) {
   called_cell <- called_by_cell[[cell]]
   
   truth_gr <- GRanges(
-    seqnames = truth_cell$chrom,
+    seqnames = truth_cell\$chrom,
     ranges = IRanges(
-      start = truth_cell$start + 1L,
-      end = truth_cell$end
+      start = truth_cell\$start + 1L,
+      end = truth_cell\$end
     )
   )
   
   called_gr <- GRanges(
-    seqnames = called_cell$chrom,
+    seqnames = called_cell\$chrom,
     ranges = IRanges(
-      start = called_cell$start + 1L,
-      end = called_cell$end
+      start = called_cell\$start + 1L,
+      end = called_cell\$end
     )
   )
   
@@ -136,22 +131,22 @@ for (i in seq_along(common_cells)) {
   if (length(hits) == 0L) next
   
   matches_cell <- data.frame(
-    truth_idx = truth_cell$truth_idx[queryHits(hits)],
-    called_idx = called_cell$called_idx[subjectHits(hits)]
+    truth_idx = truth_cell\$truth_idx[queryHits(hits)],
+    called_idx = called_cell\$called_idx[subjectHits(hits)]
   ) %>%
     mutate(
       cell_id = cell,
       
       # Ground-truth coordinates
-      truth_chrom = truth$chrom[truth_idx],
-      truth_start = truth$start[truth_idx],
-      truth_end = truth$end[truth_idx],
-      fragment_type = truth$fragment_type[truth_idx],
+      truth_chrom = truth\$chrom[truth_idx],
+      truth_start = truth\$start[truth_idx],
+      truth_end = truth\$end[truth_idx],
+      fragment_type = truth\$fragment_type[truth_idx],
       
       # Inferred coordinates
-      called_chrom = called$chrom[called_idx],
-      called_start = called$start[called_idx],
-      called_end = called$end[called_idx],
+      called_chrom = called\$chrom[called_idx],
+      called_start = called\$start[called_idx],
+      called_end = called\$end[called_idx],
       
       # Fragment lengths
       truth_length = truth_end - truth_start,
@@ -191,8 +186,8 @@ used_truth <- rep(FALSE, nrow(truth))
 used_called <- rep(FALSE, nrow(called))
 keep <- logical(nrow(matches))
 for (i in seq_len(nrow(matches))) {
-  t <- matches$truth_idx[i]
-  c <- matches$called_idx[i]
+  t <- matches\$truth_idx[i]
+  c <- matches\$called_idx[i]
   if (!used_truth[t] && !used_called[c]) {
     keep[i] <- TRUE
     used_truth[t] <- TRUE
@@ -205,11 +200,11 @@ for (i in seq_len(nrow(matches))) {
 
 
 matched_fragments <- matches[keep, , drop = FALSE] %>%
-  mutate(start_error = called$start[called_idx] - truth$start[truth_idx],
-         end_error = called$end[called_idx] - truth$end[truth_idx],
+  mutate(start_error = called\$start[called_idx] - truth\$start[truth_idx],
+         end_error = called\$end[called_idx] - truth\$end[truth_idx],
          length_error = called_length - truth_length)
-tp_truth <- truth[matched_fragments$truth_idx, , drop = FALSE]
-tp_called <- called[matched_fragments$called_idx, , drop = FALSE]
+tp_truth <- truth[matched_fragments\$truth_idx, , drop = FALSE]
+tp_called <- called[matched_fragments\$called_idx, , drop = FALSE]
 fn <- truth[!used_truth, , drop = FALSE]
 fp <- called[!used_called, , drop = FALSE]
 
@@ -222,9 +217,9 @@ f1 <- if (!is.na(precision) && !is.na(recall) && precision + recall > 0)
 metrics <- data.frame(TP = TP, FP = FP, FN = FN,
                       precision = precision, recall = recall, f1 = f1,
                       false_discovery_rate = if (TP + FP > 0) FP / (TP + FP) else NA_real_,
-                      mean_jaccard = if (TP > 0) mean(matched_fragments$jaccard) else NA_real_,
-                      mean_overlap_truth = if (TP > 0) mean(matched_fragments$overlap_truth) else NA_real_,
-                      mean_overlap_called = if (TP > 0) mean(matched_fragments$overlap_called) else NA_real_)
+                      mean_jaccard = if (TP > 0) mean(matched_fragments\$jaccard) else NA_real_,
+                      mean_overlap_truth = if (TP > 0) mean(matched_fragments\$overlap_truth) else NA_real_,
+                      mean_overlap_called = if (TP > 0) mean(matched_fragments\$overlap_called) else NA_real_)
 metrics_long <- metrics %>% pivot_longer(everything(), names_to = "metric", values_to = "value")
 print(metrics_long)
 
@@ -292,8 +287,8 @@ metrics_by_chrom <- full_join(chrom_truth, chrom_called, by = "chrom") %>%
 # P-values can be overconfident because fragments are clustered within cells.
 model_no_interaction <- NULL
 model_recovery <- NULL
-if (n_distinct(truth_eval$fragment_type) > 1 &&
-    n_distinct(truth_eval$recovered) > 1) {
+if (n_distinct(truth_eval\$fragment_type) > 1 &&
+    n_distinct(truth_eval\$recovered) > 1) {
   model_no_interaction <- glm(recovered ~ log1p(fragment_length) + fragment_type,
                               data = truth_eval, family = binomial())
   model_recovery <- glm(recovered ~ log1p(fragment_length) * fragment_type,
@@ -389,14 +384,13 @@ p_end_error <- ggplot(matched_fragments, aes(x = end_error)) +
   labs(title = "Sinto end-coordinate error", x = "Called - truth (bp)", y = "Count") +
   my_ggplot_theme()
 
-plots <- list(overall_metrics = p0, recall_by_type = p_type_recall,
+benchmark_plots <- list(overall_metrics = p0, recall_by_type = p_type_recall,
               jaccard_by_type = p_type_jaccard, coordinate_errors_by_type = p_type_errors,
               recall_by_length = p_length_recall, recall_by_type_and_length = p_type_length,
               logistic_recovery = p_length_logistic,
               length_distributions = p_length_distribution,
               # recovered_vs_unrecovered = p_recovered_lengths,
               start_error = p_start_error, end_error = p_end_error)
-wrap_plots(plots)
 
 benchmark_metrics <- list(
   parameters = list(min_overlap_bp = min_overlap_bp,
@@ -409,20 +403,8 @@ benchmark_metrics <- list(
   by_length = metrics_by_length,
   by_type_and_length = metrics_type_length,
   by_cell = metrics_by_cell,
-  by_chromosome = metrics_by_chrom,
-  model = model_results
+  by_chromosome = metrics_by_chrom
 )
 
-rds_path <- file.path(output_dir, "fragment_benchmark_metrics.rds")
-saveRDS(benchmark_metrics, rds_path)
-
-pdf_path <- file.path(output_dir, "fragment_benchmark_report.pdf")
-grDevices::pdf(pdf_path, width = 10, height = 7, onefile = TRUE)
-tryCatch({
-  for (nm in names(plots)) {
-    print(plots[[nm]])
-  }
-}, finally = grDevices::dev.off())
-
-cat("Saved metrics:", normalizePath(rds_path), "\n")
-cat("Saved report:", normalizePath(pdf_path), "\n")
+saveRDS(benchmark_metrics, paste0("${meta.sample_id}","_fragments_metrics.rds"))
+saveRDS(benchmark_plots, paste0("${meta.sample_id}","_fragments_metrics_plots.rds"))

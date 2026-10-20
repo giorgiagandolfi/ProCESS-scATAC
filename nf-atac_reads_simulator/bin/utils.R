@@ -1,7 +1,7 @@
 # library(extraDistr)
 library(data.table)
 library(Matrix)
-library(patchwork)
+# #library(patchwork)
 rztpois <- function(n, lambda) {
   x <- rpois(n, lambda)
   
@@ -896,7 +896,7 @@ convert_activity_list<-function(activity_list){
     imap_dfr(cell, function(sign_values, sign_name) {
       
       tibble(
-        mutant = cell_name,
+        phenotype = cell_name,
         pathway = sign_name,
         # pathway = names(sign_values),
         activity = as.numeric(sign_values)
@@ -1209,173 +1209,492 @@ evaluate_peaks_new <- function(truth, called, min_overlap = 10) {
 }
 
 
-evaluate_peaks_extended <- function(truth, called, min_overlap = 10) {
+# evaluate_peaks_extended <- function(truth, called, min_overlap = 10) {
+#   
+#   # Harmonise chromosome names
+#   truth$peak_chr <- ifelse(
+#     grepl("^chr", truth$peak_chr),
+#     truth$peak_chr,
+#     paste0("chr", truth$peak_chr)
+#   )
+#   
+#   called$chrom <- ifelse(
+#     grepl("^chr", called$chrom),
+#     called$chrom,
+#     paste0("chr", called$chrom)
+#   )
+#   
+#   # Remove duplicate ground-truth regions
+#   truth <- truth %>%
+#     distinct(peak_chr, peak_from, peak_to, .keep_all = TRUE)
+#   
+#   # BED/narrowPeak: 0-based, half-open coordinates.
+#   # Convert to GRanges: 1-based, closed coordinates.
+#   # Adjust the truth conversion if its coordinates are
+#   # already 1-based and inclusive.
+#   truth_gr <- GRanges(
+#     seqnames = truth$peak_chr,
+#     ranges = IRanges(
+#       start = truth$peak_from + 1L,
+#       end = truth$peak_to
+#     )
+#   )
+#   
+#   called_gr <- GRanges(
+#     seqnames = called$chrom,
+#     ranges = IRanges(
+#       start = called$start + 1L,
+#       end = called$end
+#     )
+#   )
+#   
+#   hits <- findOverlaps(
+#     called_gr,
+#     truth_gr,
+#     minoverlap = min_overlap
+#   )
+#   
+#   called_matched <- unique(queryHits(hits))
+#   truth_matched <- unique(subjectHits(hits))
+#   # Map simulated regulatory regions to MACS3-called peaks
+#   matched_idx <- data.frame(
+#     truth_idx = subjectHits(hits),
+#     called_idx = queryHits(hits)
+#   )
+#   
+#   # Calculate the number of overlapping base pairs
+#   matched_idx$overlap_bp <- width(
+#     pintersect(
+#       truth_gr[matched_idx$truth_idx],
+#       called_gr[matched_idx$called_idx]
+#     )
+#   )
+#   
+#   # Create the mapping dataframe
+#   peak_mapping_df <- cbind(
+#     truth[matched_idx$truth_idx, , drop = FALSE] %>%
+#       ungroup() %>%
+#       rename_with(~ paste0("simulated_", .x)),
+#     
+#     called[matched_idx$called_idx, , drop = FALSE] %>%
+#       ungroup() %>%
+#       rename_with(~ paste0("inferred_", .x))
+#   ) %>%
+#     mutate(
+#       overlap_bp = matched_idx$overlap_bp
+#     ) %>%
+#     as.data.frame()
+#   
+#   peak_mapping_df <- peak_mapping_df %>%
+#     mutate(
+#       simulated_width = simulated_peak_to - simulated_peak_from,
+#       inferred_width = inferred_end - inferred_start,
+#       
+#       fraction_simulated_covered =
+#         overlap_bp / simulated_width,
+#       
+#       fraction_inferred_covered =
+#         overlap_bp / inferred_width
+#     ) %>% 
+#     group_by(inferred_name) %>%
+#     mutate(
+#       n_simulated_regions = n_distinct(simulated_peak)
+#     ) %>%
+#     ungroup()
+#   
+#   
+#   n_called <- length(called_gr)
+#   n_truth <- length(truth_gr)
+#   
+#   n_supported <- length(called_matched)
+#   n_recovered <- length(truth_matched)
+#   
+#   precision <- if (n_called > 0) {
+#     n_supported / n_called
+#   } else NA_real_
+#   
+#   recall <- if (n_truth > 0) {
+#     n_recovered / n_truth
+#   } else NA_real_
+#   
+#   f1 <- if (is.na(precision) || is.na(recall)) {
+#     NA_real_
+#   } else if (precision + recall > 0) {
+#     2 * precision * recall / (precision + recall)
+#   } else 0
+#   
+#   # Base-pair-level overlap
+#   truth_union <- GenomicRanges::reduce(truth_gr)
+#   called_union <- GenomicRanges::reduce(called_gr)
+#   
+#   intersection_bp <- sum(
+#     width(intersect(truth_union, called_union))
+#   )
+#   
+#   union_bp <- sum(
+#     width(union(truth_union, called_union))
+#   )
+#   
+#   jaccard <- if (union_bp > 0) {
+#     intersection_bp / union_bp
+#   } else NA_real_
+#   
+#   # Number of overlapping regions per peak
+#   called_overlap_counts <- tabulate(
+#     queryHits(hits), nbins = n_called
+#   )
+#   
+#   # Number of overlapping peaks per truth region
+#   truth_overlap_counts <- tabulate(
+#     subjectHits(hits), nbins = n_truth
+#   )
+#   
+#   called_results <- called %>%
+#     mutate(
+#       recovered_truth_regions = called_overlap_counts,
+#       supported = recovered_truth_regions > 0,
+#       merges_regions = recovered_truth_regions > 1
+#     )
+#   
+#   truth_results <- truth %>%
+#     mutate(
+#       overlapping_called_peaks = truth_overlap_counts,
+#       recovered = overlapping_called_peaks > 0,
+#       split_across_peaks = overlapping_called_peaks > 1
+#     )
+#   
+#   metrics <- data.frame(
+#     n_called = n_called,
+#     n_truth = n_truth,
+#     n_supported_called = n_supported,
+#     n_recovered_truth = n_recovered,
+#     precision = precision,
+#     recall = recall,
+#     f1 = f1,
+#     jaccard = jaccard,
+#     n_peaks_merging_regions =
+#       sum(called_overlap_counts > 1),
+#     n_regions_overlapping_multiple_peaks =
+#       sum(truth_overlap_counts > 1)
+#   )
+#   
+#   list(
+#     metrics = metrics,
+#     peak_mapping_df = peak_mapping_df,
+#     truth_results = truth_results,
+#     called_results = called_results,
+#     hits = hits
+#   )
+# }
+evaluate_peaks_extended <- function(truth, called, min_overlap = 10L) {
+  
+  # Required packages:
+  # dplyr, GenomicRanges, IRanges, S4Vectors
+  
+  # Validate inputs
+  required_truth <- c("peak_chr", "peak_from", "peak_to")
+  required_called <- c("chrom", "start", "end")
+  
+  if (!all(required_truth %in% names(truth))) {
+    stop(
+      "truth must contain: ",
+      paste(required_truth, collapse = ", ")
+    )
+  }
+  
+  if (!all(required_called %in% names(called))) {
+    stop(
+      "called must contain: ",
+      paste(required_called, collapse = ", ")
+    )
+  }
+  
+  if (
+    length(min_overlap) != 1L ||
+    !is.numeric(min_overlap) ||
+    is.na(min_overlap) ||
+    !is.finite(min_overlap) ||
+    min_overlap < 1 ||
+    min_overlap != floor(min_overlap)
+  ) {
+    stop("min_overlap must be a positive integer.")
+  }
+  
+  validate_coordinates <- function(chr, start, end, label) {
+    if (anyNA(chr) || any(!nzchar(as.character(chr)))) {
+      stop(label, " contains missing or empty chromosome names.")
+    }
+    
+    if (!is.numeric(start) || !is.numeric(end)) {
+      stop(label, " coordinates must be numeric.")
+    }
+    
+    if (
+      anyNA(start) || anyNA(end) ||
+      any(!is.finite(start)) || any(!is.finite(end)) ||
+      any(start < 0) || any(end <= start) ||
+      any(start != floor(start)) || any(end != floor(end))
+    ) {
+      stop(
+        label,
+        " must contain valid integer, 0-based, half-open intervals ",
+        "with 0 <= start < end."
+      )
+    }
+  }
+  
+  # Remove existing grouping
+  truth <- dplyr::ungroup(truth)
+  called <- dplyr::ungroup(called)
+  
+  validate_coordinates(
+    truth$peak_chr, truth$peak_from, truth$peak_to, "truth"
+  )
+  
+  validate_coordinates(
+    called$chrom, called$start, called$end, "called"
+  )
   
   # Harmonise chromosome names
-  truth$peak_chr <- ifelse(
-    grepl("^chr", truth$peak_chr),
-    truth$peak_chr,
-    paste0("chr", truth$peak_chr)
+  harmonise_chr <- function(x) {
+    x <- as.character(x)
+    ifelse(grepl("^chr", x), x, paste0("chr", x))
+  }
+  
+  truth$peak_chr <- harmonise_chr(truth$peak_chr)
+  called$chrom <- harmonise_chr(called$chrom)
+  
+  # Remove duplicate ground-truth intervals.
+  # Other columns are retained from the first occurrence.
+  truth <- dplyr::distinct(
+    truth,
+    peak_chr, peak_from, peak_to,
+    .keep_all = TRUE
   )
   
-  called$chrom <- ifelse(
-    grepl("^chr", called$chrom),
-    called$chrom,
-    paste0("chr", called$chrom)
-  )
-  
-  # Remove duplicate ground-truth regions
-  truth <- truth %>%
-    distinct(peak_chr, peak_from, peak_to, .keep_all = TRUE)
-  
-  # BED/narrowPeak: 0-based, half-open coordinates.
-  # Convert to GRanges: 1-based, closed coordinates.
-  # Adjust the truth conversion if its coordinates are
-  # already 1-based and inclusive.
-  truth_gr <- GRanges(
+  # Convert BED-style coordinates to 1-based, closed GRanges
+  truth_gr <- GenomicRanges::GRanges(
     seqnames = truth$peak_chr,
-    ranges = IRanges(
+    ranges = IRanges::IRanges(
       start = truth$peak_from + 1L,
       end = truth$peak_to
     )
   )
   
-  called_gr <- GRanges(
+  called_gr <- GenomicRanges::GRanges(
     seqnames = called$chrom,
-    ranges = IRanges(
+    ranges = IRanges::IRanges(
       start = called$start + 1L,
       end = called$end
     )
   )
   
-  hits <- findOverlaps(
-    called_gr,
-    truth_gr,
-    minoverlap = min_overlap
+  # Find every pair sharing at least min_overlap base pairs
+  hits <- GenomicRanges::findOverlaps(
+    query = called_gr,
+    subject = truth_gr,
+    minoverlap = min_overlap,
+    ignore.strand = TRUE
   )
   
-  called_matched <- unique(queryHits(hits))
-  truth_matched <- unique(subjectHits(hits))
-  # Map simulated regulatory regions to MACS3-called peaks
-  matched_idx <- data.frame(
-    truth_idx = subjectHits(hits),
-    called_idx = queryHits(hits)
-  )
-  
-  # Calculate the number of overlapping base pairs
-  matched_idx$overlap_bp <- width(
-    pintersect(
-      truth_gr[matched_idx$truth_idx],
-      called_gr[matched_idx$called_idx]
-    )
-  )
-  
-  # Create the mapping dataframe
-  peak_mapping_df <- cbind(
-    truth[matched_idx$truth_idx, , drop = FALSE] %>%
-      ungroup() %>%
-      rename_with(~ paste0("simulated_", .x)),
-    
-    called[matched_idx$called_idx, , drop = FALSE] %>%
-      ungroup() %>%
-      rename_with(~ paste0("inferred_", .x))
-  ) %>%
-    mutate(
-      overlap_bp = matched_idx$overlap_bp
-    ) %>%
-    as.data.frame()
-  
-  peak_mapping_df <- peak_mapping_df %>%
-    mutate(
-      simulated_width = simulated_peak_to - simulated_peak_from,
-      inferred_width = inferred_end - inferred_start,
-      
-      fraction_simulated_covered =
-        overlap_bp / simulated_width,
-      
-      fraction_inferred_covered =
-        overlap_bp / inferred_width
-    ) %>% 
-    group_by(inferred_name) %>%
-    mutate(
-      n_simulated_regions = n_distinct(simulated_peak)
-    ) %>%
-    ungroup()
-  
+  called_idx <- S4Vectors::queryHits(hits)
+  truth_idx <- S4Vectors::subjectHits(hits)
   
   n_called <- length(called_gr)
   n_truth <- length(truth_gr)
   
-  n_supported <- length(called_matched)
-  n_recovered <- length(truth_matched)
+  # Number of qualifying matches for each interval
+  called_overlap_counts <- tabulate(
+    called_idx,
+    nbins = n_called
+  )
   
-  precision <- if (n_called > 0) {
+  truth_overlap_counts <- tabulate(
+    truth_idx,
+    nbins = n_truth
+  )
+  
+  n_supported <- sum(called_overlap_counts > 0L)
+  n_recovered <- sum(truth_overlap_counts > 0L)
+  
+  # Annotate every inferred peak, including false positives
+  called_results <- dplyr::mutate(
+    called,
+    called_idx = seq_len(n_called),
+    recovered_truth_regions = called_overlap_counts,
+    supported = called_overlap_counts > 0L,
+    merges_regions = called_overlap_counts > 1L,
+    status = dplyr::if_else(supported, "TP", "FP")
+  )
+  
+  # Annotate every simulated region, including false negatives
+  truth_results <- dplyr::mutate(
+    truth,
+    truth_idx = seq_len(n_truth),
+    overlapping_called_peaks = truth_overlap_counts,
+    recovered = truth_overlap_counts > 0L,
+    split_across_peaks = truth_overlap_counts > 1L,
+    status = dplyr::if_else(recovered, "TP", "FN")
+  )
+  
+  # Separate unmatched intervals
+  fp_peaks <- dplyr::filter(
+    called_results,
+    status == "FP"
+  )
+  
+  fn_peaks <- dplyr::filter(
+    truth_results,
+    status == "FN"
+  )
+  
+  # Pairwise overlap lengths
+  # Explicitly handle cases with no qualifying matches
+  overlap_bp <- integer(length(truth_idx))
+  
+  if (length(truth_idx) > 0L) {
+    overlap_bp <- IRanges::width(
+      GenomicRanges::pintersect(
+        truth_gr[truth_idx],
+        called_gr[called_idx],
+        ignore.strand = TRUE
+      )
+    )
+  }
+  
+  # One mapping row per qualifying truth–called pair
+  simulated_rows <- as.data.frame(
+    truth[truth_idx, , drop = FALSE]
+  )
+  
+  inferred_rows <- as.data.frame(
+    called[called_idx, , drop = FALSE]
+  )
+  
+  names(simulated_rows) <- paste0(
+    "simulated_", names(simulated_rows)
+  )
+  
+  names(inferred_rows) <- paste0(
+    "inferred_", names(inferred_rows)
+  )
+  
+  peak_mapping_df <- cbind(
+    data.frame(
+      truth_idx = truth_idx,
+      called_idx = called_idx
+    ),
+    simulated_rows,
+    inferred_rows
+  )
+  
+  rownames(peak_mapping_df) <- NULL
+  
+  # Widths and coverage fractions use BED-style coordinates
+  peak_mapping_df <- dplyr::mutate(
+    peak_mapping_df,
+    overlap_bp = overlap_bp,
+    
+    simulated_width =
+      simulated_peak_to - simulated_peak_from,
+    
+    inferred_width =
+      inferred_end - inferred_start,
+    
+    fraction_simulated_covered =
+      overlap_bp / simulated_width,
+    
+    fraction_inferred_covered =
+      overlap_bp / inferred_width,
+    
+    # Use interval indices rather than potentially repeated names
+    n_simulated_regions =
+      called_overlap_counts[called_idx],
+    
+    n_inferred_peaks =
+      truth_overlap_counts[truth_idx],
+    
+    # Every row here represents a qualifying overlap
+    status = rep("TP", length(truth_idx))
+  )
+  
+  # Overlap-based precision and recall
+  precision <- if (n_called > 0L) {
     n_supported / n_called
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   
-  recall <- if (n_truth > 0) {
+  recall <- if (n_truth > 0L) {
     n_recovered / n_truth
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   
   f1 <- if (is.na(precision) || is.na(recall)) {
     NA_real_
   } else if (precision + recall > 0) {
     2 * precision * recall / (precision + recall)
-  } else 0
+  } else {
+    0
+  }
   
-  # Base-pair-level overlap
-  truth_union <- reduce(truth_gr)
-  called_union <- reduce(called_gr)
+  # Base-pair-level similarity:
+  # merge overlapping/adjacent intervals to avoid double-counting
+  truth_union <- GenomicRanges::reduce(
+    truth_gr,
+    ignore.strand = TRUE
+  )
+  
+  called_union <- GenomicRanges::reduce(
+    called_gr,
+    ignore.strand = TRUE
+  )
   
   intersection_bp <- sum(
-    width(intersect(truth_union, called_union))
+    IRanges::width(
+      GenomicRanges::intersect(
+        truth_union,
+        called_union,
+        ignore.strand = TRUE
+      )
+    )
   )
   
   union_bp <- sum(
-    width(union(truth_union, called_union))
+    IRanges::width(
+      GenomicRanges::union(
+        truth_union,
+        called_union,
+        ignore.strand = TRUE
+      )
+    )
   )
   
   jaccard <- if (union_bp > 0) {
     intersection_bp / union_bp
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   
-  # Number of overlapping regions per peak
-  called_overlap_counts <- tabulate(
-    queryHits(hits), nbins = n_called
-  )
-  
-  # Number of overlapping peaks per truth region
-  truth_overlap_counts <- tabulate(
-    subjectHits(hits), nbins = n_truth
-  )
-  
-  called_results <- called %>%
-    mutate(
-      recovered_truth_regions = called_overlap_counts,
-      supported = recovered_truth_regions > 0,
-      merges_regions = recovered_truth_regions > 1
-    )
-  
-  truth_results <- truth %>%
-    mutate(
-      overlapping_called_peaks = truth_overlap_counts,
-      recovered = overlapping_called_peaks > 0,
-      split_across_peaks = overlapping_called_peaks > 1
-    )
-  
+  # Summary metrics
   metrics <- data.frame(
     n_called = n_called,
     n_truth = n_truth,
     n_supported_called = n_supported,
     n_recovered_truth = n_recovered,
+    n_fp = nrow(fp_peaks),
+    n_fn = nrow(fn_peaks),
     precision = precision,
     recall = recall,
     f1 = f1,
+    intersection_bp = intersection_bp,
+    union_bp = union_bp,
     jaccard = jaccard,
     n_peaks_merging_regions =
-      sum(called_overlap_counts > 1),
+      sum(called_overlap_counts > 1L),
     n_regions_overlapping_multiple_peaks =
-      sum(truth_overlap_counts > 1)
+      sum(truth_overlap_counts > 1L)
   )
   
   list(
@@ -1383,13 +1702,17 @@ evaluate_peaks_extended <- function(truth, called, min_overlap = 10) {
     peak_mapping_df = peak_mapping_df,
     truth_results = truth_results,
     called_results = called_results,
+    fp_peaks = fp_peaks,
+    fn_peaks = fn_peaks,
     hits = hits
   )
 }
 
+
+
 library(ggplot2)
 library(dplyr)
-library(patchwork)
+# #library(patchwork)
 
 plot_peak_example <- function(
     peak_name,
@@ -1558,7 +1881,7 @@ plot_peak_example <- function(
 
 library(dplyr)
 library(ggplot2)
-library(patchwork)
+#library(patchwork)
 library(IRanges)
 
 
@@ -1812,3 +2135,14 @@ plot_genomic_region <- function(
       )
     )
 }
+
+bed_to_granges <- function(df) {
+  GRanges(
+    seqnames = harmonise_chr(df$chrom),
+    ranges = IRanges(
+      start = df$start + 1L,
+      end = df$end
+    )
+  )
+}
+

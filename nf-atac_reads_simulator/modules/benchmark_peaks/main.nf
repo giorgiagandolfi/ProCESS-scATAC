@@ -11,13 +11,16 @@ process BENCHMARK_PEAKS {
     publishDir { "${params.outdir}/benchmarking/peak_calling/${meta.sample_id}" }, mode: 'copy'
 
     input:
-    tuple val(meta), path(peaks), path(cell_peak_txt_files), path(cell_frags_rds_files)
+    tuple val(meta), path(peaks), path(cell_peak_txt_files), path(cell_frags_rds_files), path(sample_forest)
+    path(activity_list_file)
+    path(peak_list_file)
     
 
     
     output:
-    tuple val(meta), path("*.rds"), emit: peak_benchmark_rds
-    tuple val(meta), path("*.pdf"), emit: peak_benchmark_report_pdf
+    tuple val(meta), path("*_metrics.rds"), emit: peak_benchmark_rds
+    tuple val(meta), path("*_metrics_plots.rds"), emit: peak_benchmark_report_rds
+    //tuple val(meta), path("*.pdf"), emit: peak_benchmark_report_pdf
     
     
     script:

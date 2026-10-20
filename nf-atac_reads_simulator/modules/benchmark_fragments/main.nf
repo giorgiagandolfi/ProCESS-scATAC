@@ -1,6 +1,6 @@
 process BENCHMARK_FRAGMENTS {
     tag "$meta.sample_id"
-    label 'process_medium'
+    label 'process_high_memory'
     label "error_ignore"
 
     //conda "bioconda::macs3=3.0.4"
@@ -11,13 +11,13 @@ process BENCHMARK_FRAGMENTS {
     publishDir { "${params.outdir}/benchmarking/fragment_calling/${meta.sample_id}" }, mode: 'copy'
 
     input:
-    tuple val(meta), path(fragments), path(cell_peak_txt_files)
+    tuple val(meta), path(fragments), path(cell_frags_rds_files)
     
 
     
     output:
-    tuple val(meta), path("*.rds"), emit: fragment_benchmark_rds
-    tuple val(meta), path("*.pdf"), emit: fragment_benchmark_report_pdf
+    tuple val(meta), path("*_fragments_metrics.rds"), emit: fragment_benchmark_rds
+    tuple val(meta), path("*_fragments_metrics_plots.rds"), emit: fragment_benchmark_report_rds
     
     
     script:
